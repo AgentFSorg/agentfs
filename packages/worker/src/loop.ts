@@ -9,7 +9,8 @@ function buildEmbeddingText(path: string, value: unknown, tags: unknown): string
   return joined.length > 8000 ? joined.slice(0, 8000) : joined;
 }
 
-export async function runLoop(opts: { once?: boolean } = {}) {
+export async function runLoop(opts: { once?: boolean; embed?: (text: string) => Promise<number[]> } = {}) {
+  const embed = opts.embed ?? embedText;
   const sql = makeSql();
   try {
     while (true) {
@@ -48,13 +49,15 @@ export async function runLoop(opts: { once?: boolean } = {}) {
 
         const ver = rows[0]!;
         const text = buildEmbeddingText(job.path, ver.value_json, ver.tags_json);
-        const vec = await embedText(text);
+        const vec = await embed(text);
+        if (!Array.isArray(vec) || vec.length === 0) throw new Error("Invalid embedding vector");
+        const vecLiteral = `[${vec.join(",")}]`;
 
         await sql`
           INSERT INTO embeddings (version_id, tenant_id, agent_id, path, model, embedding)
           VALUES (${job.version_id}::uuid, ${job.tenant_id}::uuid, ${job.agent_id}, ${job.path},
                   ${process.env.OPENAI_EMBED_MODEL || "text-embedding-3-small"},
-                  ${vec}::vector)
+                  ${vecLiteral}::vector)
           ON CONFLICT (version_id) DO UPDATE SET embedding = EXCLUDED.embedding, created_at=now()
         `;
 
