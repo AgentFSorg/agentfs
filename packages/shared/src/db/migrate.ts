@@ -34,7 +34,8 @@ async function main() {
       await sql.begin(async (tx) => {
         // Migration SQL is local, versioned code (not user input).
         await tx.unsafe(text);
-        await tx`INSERT INTO schema_migrations (version) VALUES (${f})`;
+        const trx = tx as any;
+        await trx`INSERT INTO schema_migrations (version) VALUES (${f})`;
       });
     }
      
