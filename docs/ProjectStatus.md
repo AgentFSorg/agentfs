@@ -3,7 +3,7 @@
 **Date:** 2026-01-28 (Europe/Dublin)
 
 ## Summary
-- **Phase:** 2 (Search + Cost Controls) - Complete
+- **Phase:** 3 (SDK + Hardening) - Complete
 - **Overall:** Green
 - **Top risk:** None currently
 
@@ -29,11 +29,17 @@
 - [x] Embedding quota tracking (incEmbedQuota, checkEmbedQuota)
 - [x] Metrics for embedding jobs and quota denials
 
-## Next Up (Phase 3)
-- [ ] Implement TypeScript SDK
-- [ ] Implement idempotency keys
-- [ ] Add rate limiting
-- [ ] Add contract tests
+## Shipped (Phase 3)
+- [x] TypeScript SDK with full types and idempotency support
+- [x] Idempotency keys for PUT/DELETE operations
+- [x] Rate limiting (in-memory sliding window)
+- [x] SDK contract tests (7 tests)
+
+## Next Up (Phase 4)
+- [ ] Backup/restore runbook
+- [ ] Security checklist verification
+- [ ] Documentation pass
+- [ ] Tag v1.0.0
 
 ## Metrics
 - Requests/day: N/A (not deployed)
