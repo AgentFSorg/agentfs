@@ -1,6 +1,6 @@
 # AgentFS Context & Positioning
 
-**Last updated:** 2026-01-27 (Europe/Dublin)
+**Last updated:** 2026-01-28 (Europe/Dublin)
 
 Agent memory is an active market. AgentFS can win by shipping a reliable, deterministic core with filesystem semantics and cost controls.
 
@@ -19,3 +19,7 @@ Agent memory is an active market. AgentFS can win by shipping a reliable, determ
 1) Filesystem semantics: paths + list/glob + version history + TTL  
 2) Deterministic context assembly (bounded + explainable)  
 3) Cost controls: opt-in embedding + quotas + dedupe
+
+## MVP discipline (what we optimized for)
+- Secure-by-default ops: pre-auth throttling on `/v1/*`, metrics gated in production, upstream error redaction
+- Repeatable builds: `pnpm verify` + migrations tracked via `schema_migrations`

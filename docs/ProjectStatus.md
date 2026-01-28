@@ -5,15 +5,15 @@
 ## Summary
 - **Phase:** 4 (v1.0 Stabilization) - Complete
 - **Overall:** Green
-- **Top risk:** None currently
+- **Top risk:** In-memory rate limiting (pre-auth + per-tenant) is per-process; multi-instance deployments need a shared limiter or gateway-level limiting
 - **Version:** v1.0.0
 
 ## Shipped (Phase 0)
 - [x] Docker Compose with pgvector
-- [x] Database migrations
+- [x] Database migrations (tracked via `schema_migrations`)
 - [x] Tenant seeding
 - [x] API key generation
-- [x] API server with /healthz and /metrics
+- [x] API server with /healthz and gated /metrics
 - [x] Git repository initialized
 - [x] CI workflow created
 
@@ -35,6 +35,10 @@
 - [x] Idempotency keys for PUT/DELETE operations
 - [x] Rate limiting (in-memory sliding window)
 - [x] SDK contract tests (7 tests)
+
+## Ops/Quality
+- [x] `pnpm verify` (build + lint + tests + smoke)
+- [x] Pre-auth throttling for `/v1/*` (IP-based, in-memory)
 
 ## Shipped (Phase 4)
 - [x] Backup/restore runbook (OPERATIONS.md)
@@ -63,3 +67,4 @@ None
 - API server needs to be started from `packages/api` directory or use `pnpm dev:api`
 - argon2 version updated from non-existent 0.32.3 to 0.41.1
 - env.ts fixed to find .env from workspace root
+- Quota env vars split into clear units (`WRITE_QUOTA_PER_DAY`, `SEARCH_QUOTA_PER_DAY`, etc.)

@@ -3,7 +3,7 @@
 **Date:** 2026-01-28  
 **Scope:** `packages/api`, `packages/shared`, `packages/worker`, `packages/sdk`  
 **Audit baseline (pre-fix):** `12ca262` (phase4)  
-**Fix range:** `a396971..99e3af9`
+**Fix range:** `a396971..HEAD`
 
 This report is **evidence-based**. Every finding includes exact file paths, line ranges, and concrete exploit/impact descriptions. When an item is a product decision (not a clear bug), it is called out explicitly.
 
@@ -15,7 +15,7 @@ This report is **evidence-based**. Every finding includes exact file paths, line
 2. **Untrusted upstream error bodies exposed / stored (High)** — pre-fix bubbled OpenAI error bodies to clients or persisted them; fixed.
 3. **Missing request size/time limits (Medium)** — pre-fix relied on defaults and had no upstream timeout; fixed.
 4. **Wildcard bypass in prefix filters (Medium)** — pre-fix treated `%`/`_` as LIKE wildcards; fixed.
-5. **Unauthenticated endpoints (/metrics) and unauthenticated rate limiting (Product decision)** — should be protected by network policy or auth in production.
+5. **Per-process abuse controls (Medium)** — pre-auth throttling and rate limiting are in-memory; multi-instance deployments need shared/gateway enforcement.
 
 ---
 
@@ -59,7 +59,8 @@ This report is **evidence-based**. Every finding includes exact file paths, line
 | SEC-007 | Medium | API / Data correctness | Prefix filters treated `%`/`_` as wildcards (LIKE injection/bypass of intended filter) | `packages/api/src/routes/memory.ts` `#L323-340` and `#L441-472` | `7956fbc` |
 | SEC-008 | Medium | API / DoS | Glob patterns unbounded (size/shape), enabling expensive LIKE scans with huge patterns | `packages/api/src/routes/memory.ts` `#L364-399` | `7956fbc` |
 | SEC-009 | Low | API / Abuse | Admin bootstrap endpoint lacked explicit rate limit | `packages/api/src/routes/admin.ts` `#L17-23` | `a396971` |
-| SEC-010 | Product decision | Ops | `/metrics` unauthenticated | `packages/api/src/index.ts` `#L37-40` | N/A |
+| SEC-010 | Medium | Ops | `/metrics` must not be publicly readable in production | `packages/api/src/server.ts` `#L63-91` (gating) and `packages/api/src/index.ts` (pre-fix) `a396971^` `#L34-37` | `d8c46bb` |
+| SEC-011 | Medium | Ops | Missing pre-auth throttling allowed unauthenticated floods to reach auth/DB | `packages/api/src/server.ts` `#L28-49` | `d8c46bb` |
 
 ---
 
@@ -180,12 +181,14 @@ AND e.path LIKE ${like} ESCAPE '\\'
 
 ---
 
-## Items Requiring Product Decision (Not Clear Bugs)
+## Ops Recommendations (MVP vs Production)
 
-1. **Unauthenticated `/metrics`** (`packages/api/src/index.ts#L37-40`)  
-   - If the API is public, protect via network policy, basic auth, or an internal-only listener.
-2. **Unauthenticated rate limiting**  
-   - Current limiter keys on `tenantId`, which is only known after auth. If the API is public-facing, add a coarse IP-based or global limiter in front of auth to reduce brute-force/DoS risk.
+1. **Metrics exposure**
+   - MVP default: `/metrics` is disabled in production unless `ENABLE_METRICS=true`, and requires `METRICS_TOKEN` when enabled (`packages/api/src/server.ts`).
+   - Production recommendation: also isolate `/metrics` at the network layer (private network/VPN/proxy allowlist).
+2. **Pre-auth throttling**
+   - MVP default: per-process IP-based token bucket for `/v1/*` before auth (`packages/api/src/server.ts`).
+   - Production recommendation: add gateway/WAF enforcement and ensure `req.ip` reflects the real client IP (proxy/trust settings).
 
 ---
 
@@ -197,4 +200,7 @@ AND e.path LIKE ${like} ESCAPE '\\'
 - `4f16476` — add security/caps tests + worker claim test coverage.
 - `719b699` — make SDK contract tests self-contained by running an in-process API.
 - `99e3af9` — schema hardening migration for constraints and indexes.
-
+- `bea5951` — add `pnpm verify` and smoke check.
+- `d8c46bb` — gate `/metrics` in production and add pre-auth throttling for `/v1/*`; split search quota vs rate limit env vars.
+- `2bb29a0` — track migrations in `schema_migrations`.
+- `993493f` — add regression tests for `/metrics` gating and embeddings error redaction.

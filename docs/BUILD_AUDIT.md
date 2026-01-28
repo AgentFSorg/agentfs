@@ -2,7 +2,7 @@
 
 **Date:** 2026-01-28  
 **Audit baseline (pre-fix):** `12ca262` (phase4)  
-**Fix range:** `a396971..99e3af9`
+**Fix range:** `a396971..HEAD`
 
 This report records the **exact commands run** and the pass/fail outcome to validate “fresh clone → green”.
 
@@ -37,14 +37,14 @@ pnpm db:up
 
 **Status:** PASS
 
-### 3) Run migrations (idempotent)
+### 3) Run migrations
 
 ```bash
 pnpm db:migrate
 ```
 
 **Status:** PASS  
-**Notes:** migrations are applied in lexical order by `packages/shared/src/db/migrate.ts` using idempotent SQL.
+**Notes:** migrations are applied in lexical order by `packages/shared/src/db/migrate.ts` and tracked in `schema_migrations`.
 
 ### 4) Seed default tenant
 
@@ -72,6 +72,7 @@ curl -sS http://localhost:8787/metrics
 ```
 
 **Status:** PASS
+**Notes:** in production, `/metrics` is disabled unless `ENABLE_METRICS=true`, and requires `METRICS_TOKEN` when enabled.
 
 ### 7) Lint
 
@@ -92,6 +93,15 @@ pnpm test
 **Notes (important):**
 - SDK tests used to fail with `ECONNREFUSED` because they required a separately running API. This was fixed by running an in-process Fastify server during SDK tests (`test(sdk): run contract tests against in-process API`, commit `719b699`).
 - Worker now has a job-claiming correctness test (`packages/worker/src/loop.test.ts`).
+ - API now has regression tests for `/metrics` gating and embeddings error redaction.
+
+### 9) Verify script
+
+```bash
+pnpm verify
+```
+
+**Status:** PASS
 
 ### 9) Dependency audit (optional)
 
@@ -107,6 +117,5 @@ pnpm audit --prod
 
 1. **SDK contract tests required external API**  
    - **Fix:** `packages/sdk/src/index.test.ts` starts an in-process API server. (commit `719b699`)
-2. **Rate-limit env var not documented in `.env.example`**  
-   - **Fix:** added `RATE_LIMIT_REQUESTS_PER_MINUTE` to `.env.example`. (commit `a396971`)
-
+2. **Env var units confusion (quota vs rate limit)**  
+   - **Fix:** split env vars into clear units (`WRITE_QUOTA_PER_DAY`, `SEARCH_QUOTA_PER_DAY`, `SEARCH_RATE_LIMIT_PER_MINUTE`, etc.) and updated `.env.example`.

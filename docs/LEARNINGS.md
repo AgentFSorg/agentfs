@@ -59,3 +59,5 @@ Deletes are tombstones, not physical deletions. A delete creates a new version w
 - Rate limiting is in-memory per process; multi-instance deployments will need a shared limiter (e.g., Redis) or a gateway-level limiter
 - Idempotency keys are implemented for `PUT` and `DELETE` via `Idempotency-Key` and stored for 24h (`packages/api/src/idempotency.ts`)
 - SDK contract tests run an in-process API server to keep `pnpm test` green without manual coordination (`packages/sdk/src/index.test.ts`)
+- Migrations are tracked in `schema_migrations` and applied once (`packages/shared/src/db/migrate.ts`)
+- Search quota and search rate limiting are split into separate env vars to avoid unit confusion (`WRITE_QUOTA_PER_DAY`, `SEARCH_QUOTA_PER_DAY`, `SEARCH_RATE_LIMIT_PER_MINUTE`)

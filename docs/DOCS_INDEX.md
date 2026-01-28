@@ -18,6 +18,7 @@ This project uses an MVP-first approach. If you are building, follow the "Start 
 | **SERVICES.md** | External services + env vars | Setting up environments |
 | **Security.md** | Security checklist + controls | Hardening / review |
 | **Testing.md** | Test strategy + CI gates | Building reliably |
+| **VERIFY_FRESH_SETUP.md** | Fresh clone → green checklist | Repro / onboarding |
 | **Context.md** | Competitive landscape + positioning | Strategy / differentiation |
 | **ProjectStatus.md** | Status template + metrics | Tracking progress |
 | **DecisionLog.md** | Key decisions (and why) | Avoiding re-litigation |

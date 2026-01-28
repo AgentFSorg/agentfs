@@ -3,7 +3,7 @@
 **Date:** 2026-01-28  
 **Scope:** `packages/api`, `packages/shared`, `packages/worker`, `packages/sdk`  
 **Audit baseline (pre-fix):** `12ca262` (phase4)  
-**Fix range:** `a396971..99e3af9`
+**Fix range:** `a396971..HEAD`
 
 This report focuses on invariants described in `docs/Architecture.md` and the behavior implemented in code. Items that are “by design” are labeled; anything that needs product decision is separated.
 
@@ -64,25 +64,25 @@ This report focuses on invariants described in `docs/Architecture.md` and the be
 
 ---
 
-### COR-003: Glob semantics are an approximation (Needs product decision / doc alignment)
+### COR-003: Glob semantics are an approximation (Documented)
 
 **Impact:** `globToSqlLike` uses `%` for `*`, which can match `/` (segment separators). This can violate the documented rule “`*` within a segment” for certain patterns.
 
 **Evidence:** `packages/shared/src/glob.ts#L21-29` uses `%` for both `*` and `**`.
 
-**Options:**
-1. Update docs to explicitly state `*` is implemented as a LIKE approximation and may cross segments.
-2. Implement stricter semantics (likely using regex `~` with `[^/]*`), accepting possible performance trade-offs.
+**Resolution:** Documented as a SQL `LIKE`-based “glob-like” matcher in `docs/API.md` (“Glob semantics” section).
 
 ---
 
-### COR-004: Quota naming/units are confusing (Needs product decision / docs alignment)
+### COR-004: Quota naming/units confusion (Fixed)
 
-**Impact:** `QUOTA_SEARCHES_PER_MINUTE` is used both as a per-minute limiter and as a basis for a daily counter (`* 60 * 24`). This is consistent code-wise, but confusing operationally.
+**Impact (pre-fix):** `QUOTA_SEARCHES_PER_MINUTE` was used both as a per-minute limiter and as a proxy for a daily quota, which is easy to misconfigure.
 
-**Evidence:** `packages/api/src/quotas.ts#L48-52` and `packages/api/src/routes/memory.ts#L408-416`.
+**Fix:** split into distinct env vars:
+- `SEARCH_RATE_LIMIT_PER_MINUTE` (abuse control)
+- `SEARCH_QUOTA_PER_DAY` (daily fairness/billing)
 
-**Recommendation:** Split into `RATE_LIMIT_SEARCHES_PER_MINUTE` and `QUOTA_SEARCHES_PER_DAY` (or document current coupling).
+**Evidence:** `packages/shared/src/env.ts` computes and exposes both, and callers use them (`packages/api/src/routes/memory.ts` for rate limiting; `packages/api/src/quotas.ts` for daily quota).
 
 ---
 
@@ -99,4 +99,3 @@ This report focuses on invariants described in `docs/Architecture.md` and the be
    - Max 500 results: `packages/api/src/routes/memory.test.ts` (“Caps”)
 5. **Worker job claiming correctness**
    - Two workers cannot claim same job: `packages/worker/src/loop.test.ts`
-
