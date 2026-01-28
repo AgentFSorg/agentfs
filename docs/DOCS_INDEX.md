@@ -16,6 +16,7 @@ This project uses an MVP-first approach. If you are building, follow the "Start 
 | **API.md** | HTTP API specification | Implementing API/SDK |
 | **DataModel.md** | Postgres schema + indexing strategy | Writing migrations |
 | **SERVICES.md** | External services + env vars | Setting up environments |
+| **DEPLOYMENT.md** | Deployment gotchas (trustProxy, metrics, throttling) | Shipping / going public |
 | **Security.md** | Security checklist + controls | Hardening / review |
 | **Testing.md** | Test strategy + CI gates | Building reliably |
 | **VERIFY_FRESH_SETUP.md** | Fresh clone → green checklist | Repro / onboarding |
