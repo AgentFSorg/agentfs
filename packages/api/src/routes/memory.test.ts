@@ -3,6 +3,9 @@ import Fastify from "fastify";
 import { memoryRoutes } from "./memory.js";
 import { adminRoutes } from "./admin.js";
 import { setupTestTenant, createSecondTenant, TestContext } from "../test-utils.js";
+import { makeSql } from "@agentfs/shared/src/db/client.js";
+import argon2 from "argon2";
+import { randomBytes } from "node:crypto";
 
 const BASE_URL = "http://localhost";
 
@@ -16,6 +19,23 @@ describe("Memory Routes", () => {
     app.get("/healthz", async () => ({ ok: true }));
     await memoryRoutes(app);
     await adminRoutes(app);
+
+    // Set up error handler (same as in index.ts)
+    app.setErrorHandler((err, _req, reply) => {
+      // Detect Zod validation errors (they have an 'issues' array)
+      if ((err as any).issues && Array.isArray((err as any).issues)) {
+        const zodErr = err as any;
+        const firstIssue = zodErr.issues[0];
+        const message = firstIssue?.message ?? "Validation error";
+        return reply.status(400).send({ error: { code: "VALIDATION_ERROR", message } });
+      }
+
+      const status = (err as any).statusCode ?? 500;
+      const code = (err as any).code ?? "INTERNAL";
+      const message = (err as any).message ?? "Internal error";
+      reply.status(status).send({ error: { code, message } });
+    });
+
     await app.ready();
 
     ctx = await setupTestTenant();
@@ -48,6 +68,43 @@ describe("Memory Routes", () => {
     it("should reject requests with invalid auth", async () => {
       const res = await inject("POST", "/v1/get", { agent_id: "test", path: "/foo" }, "invalid.token");
       expect(res.statusCode).toBe(401);
+    });
+
+    it("should reject requests with wrong auth scheme", async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/v1/get",
+        headers: { "Content-Type": "application/json", Authorization: `Basic ${Buffer.from("x:y").toString("base64")}` },
+        payload: { agent_id: "test", path: "/foo" }
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it("should reject revoked API keys", async () => {
+      const apiKeyId = "revoked_" + randomBytes(8).toString("hex");
+      const secret = randomBytes(32).toString("base64url");
+      const apiKey = `${apiKeyId}.${secret}`;
+      const secretHash = await argon2.hash(secret);
+
+      const sql = makeSql();
+      try {
+        await sql`
+          INSERT INTO api_keys (id, tenant_id, secret_hash, label, revoked_at)
+          VALUES (${apiKeyId}, ${ctx.tenantId}::uuid, ${secretHash}, 'revoked-test', now())
+        `;
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+
+      const res = await inject("POST", "/v1/get", { agent_id: "test", path: "/foo" }, apiKey);
+      expect(res.statusCode).toBe(401);
+
+      const sql2 = makeSql();
+      try {
+        await sql2`DELETE FROM api_keys WHERE id = ${apiKeyId}`;
+      } finally {
+        await sql2.end({ timeout: 5 });
+      }
     });
   });
 
@@ -362,6 +419,180 @@ describe("Memory Routes", () => {
       const body = res.json();
       expect(body.results).toEqual([]);
       expect(body.note).toContain("OPENAI_API_KEY");
+    });
+  });
+
+  describe("Security", () => {
+    it("should reject SQL injection attempts in agent_id", async () => {
+      const res = await inject("POST", "/v1/search", {
+        agent_id: "test'; DROP TABLE entries; --",
+        query: "hello"
+      }, ctx.apiKey);
+      // Should be rejected by validation regex
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("should reject invalid agent_id characters", async () => {
+      const res = await inject("POST", "/v1/search", {
+        agent_id: "test<script>alert(1)</script>",
+        query: "hello"
+      }, ctx.apiKey);
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("should accept valid agent_id with allowed characters", async () => {
+      const res = await inject("POST", "/v1/search", {
+        agent_id: "valid-agent_123",
+        query: "hello"
+      }, ctx.apiKey);
+      // Should pass validation (but may return empty results)
+      expect(res.statusCode).toBe(200);
+    });
+
+    it("should include rate limit headers on responses", async () => {
+      const res = await inject("POST", "/v1/get", {
+        agent_id: "test",
+        path: "/nonexistent"
+      }, ctx.apiKey);
+      expect(res.statusCode).toBe(200);
+      expect(res.headers["x-ratelimit-limit"]).toBeDefined();
+      expect(res.headers["x-ratelimit-remaining"]).toBeDefined();
+      expect(res.headers["x-ratelimit-reset"]).toBeDefined();
+    });
+
+    it("should validate path_prefix length in search", async () => {
+      const longPrefix = "/" + "a".repeat(600); // Over 512 char limit
+      const res = await inject("POST", "/v1/search", {
+        agent_id: "test",
+        query: "hello",
+        path_prefix: longPrefix
+      }, ctx.apiKey);
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("should validate tags_any array size in search", async () => {
+      const tooManyTags = Array(25).fill("tag"); // Over 20 limit
+      const res = await inject("POST", "/v1/search", {
+        agent_id: "test",
+        query: "hello",
+        tags_any: tooManyTags
+      }, ctx.apiKey);
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("should reject idempotency key reuse with different request body", async () => {
+      const key = "idem_" + Date.now();
+      const res1 = await app.inject({
+        method: "POST",
+        url: "/v1/put",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${ctx.apiKey}`,
+          "Idempotency-Key": key
+        },
+        payload: { agent_id: "test", path: "/idem/mismatch", value: { a: 1 } }
+      });
+      expect(res1.statusCode).toBe(200);
+
+      const res2 = await app.inject({
+        method: "POST",
+        url: "/v1/put",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${ctx.apiKey}`,
+          "Idempotency-Key": key
+        },
+        payload: { agent_id: "test", path: "/idem/mismatch", value: { a: 2 } }
+      });
+      expect(res2.statusCode).toBe(422);
+      expect(res2.json().error?.code).toBe("IDEMPOTENCY_KEY_MISMATCH");
+    });
+
+    it("should treat % and _ literally in list prefix filters", async () => {
+      await inject("POST", "/v1/put", { agent_id: "test", path: "/weird%prefix/a", value: 1 }, ctx.apiKey);
+      await inject("POST", "/v1/put", { agent_id: "test", path: "/weirdXprefix/a", value: 2 }, ctx.apiKey);
+
+      const res = await inject("POST", "/v1/list", { agent_id: "test", prefix: "/weird%prefix" }, ctx.apiKey);
+      expect(res.statusCode).toBe(200);
+      const paths = res.json().items.map((i: any) => i.path);
+      expect(paths).toContain("/weird%prefix/a");
+      expect(paths).not.toContain("/weirdXprefix/a");
+    });
+  });
+
+  describe("Caps", () => {
+    it("should cap list results to 500", async () => {
+      const prefix = `/caps/list-${Date.now()}`;
+      const agentId = "test";
+
+      const sql = makeSql();
+      try {
+        for (let i = 0; i < 510; i++) {
+          const path = `${prefix}/item-${String(i).padStart(4, "0")}`;
+          const rows = await sql`
+            INSERT INTO entry_versions (tenant_id, agent_id, path, value_json, tags_json, importance, searchable, content_hash)
+            VALUES (${ctx.tenantId}::uuid, ${agentId}, ${path}, '{}'::jsonb, '[]'::jsonb, 0, false, 'cap-test')
+            RETURNING id
+          `;
+          const verId = rows[0]!.id;
+          await sql`
+            INSERT INTO entries (tenant_id, agent_id, path, latest_version_id)
+            VALUES (${ctx.tenantId}::uuid, ${agentId}, ${path}, ${verId}::uuid)
+            ON CONFLICT (tenant_id, agent_id, path) DO UPDATE SET latest_version_id = EXCLUDED.latest_version_id
+          `;
+        }
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+
+      const res = await inject("POST", "/v1/list", { agent_id: agentId, prefix }, ctx.apiKey);
+      expect(res.statusCode).toBe(200);
+      expect(res.json().items).toHaveLength(500);
+
+      const sql2 = makeSql();
+      try {
+        await sql2`DELETE FROM entries WHERE tenant_id = ${ctx.tenantId}::uuid AND agent_id = ${agentId} AND path LIKE ${prefix + "/%"} `;
+        await sql2`DELETE FROM entry_versions WHERE tenant_id = ${ctx.tenantId}::uuid AND agent_id = ${agentId} AND path LIKE ${prefix + "/%"} `;
+      } finally {
+        await sql2.end({ timeout: 5 });
+      }
+    });
+
+    it("should cap glob results to 500", async () => {
+      const prefix = `/caps/glob-${Date.now()}`;
+      const agentId = "test";
+
+      const sql = makeSql();
+      try {
+        for (let i = 0; i < 510; i++) {
+          const path = `${prefix}/item-${String(i).padStart(4, "0")}`;
+          const rows = await sql`
+            INSERT INTO entry_versions (tenant_id, agent_id, path, value_json, tags_json, importance, searchable, content_hash)
+            VALUES (${ctx.tenantId}::uuid, ${agentId}, ${path}, '{}'::jsonb, '[]'::jsonb, 0, false, 'cap-test')
+            RETURNING id
+          `;
+          const verId = rows[0]!.id;
+          await sql`
+            INSERT INTO entries (tenant_id, agent_id, path, latest_version_id)
+            VALUES (${ctx.tenantId}::uuid, ${agentId}, ${path}, ${verId}::uuid)
+            ON CONFLICT (tenant_id, agent_id, path) DO UPDATE SET latest_version_id = EXCLUDED.latest_version_id
+          `;
+        }
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+
+      const res = await inject("POST", "/v1/glob", { agent_id: agentId, pattern: `${prefix}/**` }, ctx.apiKey);
+      expect(res.statusCode).toBe(200);
+      expect(res.json().paths).toHaveLength(500);
+
+      const sql2 = makeSql();
+      try {
+        await sql2`DELETE FROM entries WHERE tenant_id = ${ctx.tenantId}::uuid AND agent_id = ${agentId} AND path LIKE ${prefix + "/%"} `;
+        await sql2`DELETE FROM entry_versions WHERE tenant_id = ${ctx.tenantId}::uuid AND agent_id = ${agentId} AND path LIKE ${prefix + "/%"} `;
+      } finally {
+        await sql2.end({ timeout: 5 });
+      }
     });
   });
 });
