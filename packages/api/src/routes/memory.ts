@@ -5,6 +5,8 @@ import { globToSqlLike } from "@agentfs/shared/src/glob.js";
 import { makeSql } from "@agentfs/shared/src/db/client.js";
 import { authenticate, requireScope } from "../auth.js";
 import { incWriteQuota, incSearchQuota } from "../quotas.js";
+import { embedQuery } from "../embeddings.js";
+import { getEnv } from "@agentfs/shared/src/env.js";
 import { createHash } from "node:crypto";
 
 function stableJson(value: unknown): string {
@@ -266,7 +268,6 @@ export async function memoryRoutes(app: FastifyInstance) {
     }
   });
 
-  // Search is stubbed until worker is running + embeddings are populated.
   app.post("/v1/search", async (req, reply) => {
     const ctx = await authenticate(req);
     requireScope(ctx, "search:read");
@@ -281,10 +282,71 @@ export async function memoryRoutes(app: FastifyInstance) {
     });
     const body = Body.parse(req.body);
 
-    // MVP: require worker to create embeddings. For now, return empty with guidance.
-    return reply.send({
-      results: [],
-      note: "Search requires embeddings. Run worker and write entries with searchable=true."
-    });
+    const env = getEnv();
+    if (!env.OPENAI_API_KEY) {
+      return reply.send({
+        results: [],
+        note: "Search requires OPENAI_API_KEY to be configured."
+      });
+    }
+
+    // Embed the query
+    const queryVec = await embedQuery(body.query);
+    const vecStr = `[${queryVec.join(",")}]`;
+
+    const sql = makeSql();
+    try {
+      // Build dynamic query with optional filters
+      let pathFilter = "";
+      if (body.path_prefix) {
+        const prefix = normalizePath(body.path_prefix);
+        pathFilter = prefix === "/" ? "" : ` AND emb.path LIKE '${prefix.replace(/'/g, "''")}%'`;
+      }
+
+      // Vector similarity search using pgvector cosine distance
+      const rows = await sql.unsafe(`
+        SELECT
+          emb.path,
+          emb.version_id,
+          ev.value_json,
+          ev.tags_json,
+          ev.created_at,
+          1 - (emb.embedding <=> '${vecStr}'::vector) as similarity
+        FROM embeddings emb
+        JOIN entry_versions ev ON ev.id = emb.version_id
+        JOIN entries e ON e.tenant_id = emb.tenant_id
+          AND e.agent_id = emb.agent_id
+          AND e.path = emb.path
+          AND e.latest_version_id = emb.version_id
+        WHERE emb.tenant_id = '${ctx.tenantId}'::uuid
+          AND emb.agent_id = '${body.agent_id}'
+          AND (ev.deleted_at IS NULL)
+          AND (ev.expires_at IS NULL OR ev.expires_at > now())
+          ${pathFilter}
+        ORDER BY emb.embedding <=> '${vecStr}'::vector ASC
+        LIMIT ${body.limit}
+      `);
+
+      // Filter by tags if specified
+      let results = rows.map((r: any) => ({
+        path: r.path,
+        value: r.value_json,
+        tags: r.tags_json,
+        similarity: r.similarity,
+        version_id: r.version_id,
+        created_at: r.created_at
+      }));
+
+      if (body.tags_any && body.tags_any.length > 0) {
+        results = results.filter((r: any) => {
+          const tags = Array.isArray(r.tags) ? r.tags : [];
+          return body.tags_any!.some(t => tags.includes(t));
+        });
+      }
+
+      return reply.send({ results });
+    } finally {
+      await sql.end({ timeout: 5 });
+    }
   });
 }

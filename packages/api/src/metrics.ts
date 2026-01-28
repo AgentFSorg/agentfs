@@ -17,3 +17,17 @@ export const httpDuration = new client.Histogram({
   buckets: [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
   registers: [register]
 });
+
+export const embeddingJobs = new client.Counter({
+  name: "agentfs_embedding_jobs_total",
+  help: "Total embedding jobs by status",
+  labelNames: ["status"],
+  registers: [register]
+});
+
+export const quotaDenials = new client.Counter({
+  name: "agentfs_quota_denials_total",
+  help: "Total quota denials by type",
+  labelNames: ["type"],
+  registers: [register]
+});

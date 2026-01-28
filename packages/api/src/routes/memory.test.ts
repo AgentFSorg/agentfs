@@ -361,7 +361,7 @@ describe("Memory Routes", () => {
       expect(res.statusCode).toBe(200);
       const body = res.json();
       expect(body.results).toEqual([]);
-      expect(body.note).toContain("embeddings");
+      expect(body.note).toContain("OPENAI_API_KEY");
     });
   });
 });
