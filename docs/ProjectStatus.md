@@ -3,9 +3,10 @@
 **Date:** 2026-01-28 (Europe/Dublin)
 
 ## Summary
-- **Phase:** 3 (SDK + Hardening) - Complete
+- **Phase:** 4 (v1.0 Stabilization) - Complete
 - **Overall:** Green
 - **Top risk:** None currently
+- **Version:** v1.0.0
 
 ## Shipped (Phase 0)
 - [x] Docker Compose with pgvector
@@ -35,11 +36,17 @@
 - [x] Rate limiting (in-memory sliding window)
 - [x] SDK contract tests (7 tests)
 
-## Next Up (Phase 4)
-- [ ] Backup/restore runbook
-- [ ] Security checklist verification
-- [ ] Documentation pass
-- [ ] Tag v1.0.0
+## Shipped (Phase 4)
+- [x] Backup/restore runbook (OPERATIONS.md)
+- [x] Security checklist verification (Security.md)
+- [x] Documentation pass (DOCS_INDEX.md updated)
+- [x] Tag v1.0.0
+
+## Future Roadmap
+- [ ] Redis-based rate limiting for horizontal scaling
+- [ ] Key rotation mechanism
+- [ ] Webhook notifications
+- [ ] Multi-region deployment guide
 
 ## Metrics
 - Requests/day: N/A (not deployed)

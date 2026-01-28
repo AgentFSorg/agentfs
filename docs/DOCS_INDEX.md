@@ -1,8 +1,8 @@
 # AgentFS Documentation Index
 
-**Last updated:** 2026-01-27 (Europe/Dublin)
+**Last updated:** 2026-01-28 (Europe/Dublin)
 
-This project uses an MVP-first approach. If you are building, follow the “Start Building” path.
+This project uses an MVP-first approach. If you are building, follow the "Start Building" path.
 
 ---
 
@@ -16,13 +16,16 @@ This project uses an MVP-first approach. If you are building, follow the “Star
 | **API.md** | HTTP API specification | Implementing API/SDK |
 | **DataModel.md** | Postgres schema + indexing strategy | Writing migrations |
 | **SERVICES.md** | External services + env vars | Setting up environments |
-| **Security.md** | Threat model + controls | Hardening / review |
+| **Security.md** | Security checklist + controls | Hardening / review |
 | **Testing.md** | Test strategy + CI gates | Building reliably |
 | **Context.md** | Competitive landscape + positioning | Strategy / differentiation |
 | **ProjectStatus.md** | Status template + metrics | Tracking progress |
 | **DecisionLog.md** | Key decisions (and why) | Avoiding re-litigation |
-| **AUDIT.md** | Risk register + “what we cut” rationale | Sanity checking scope |
+| **AUDIT.md** | Risk register + "what we cut" rationale | Sanity checking scope |
 | **FIXES.md** | Implementation specs for MVP primitives | Building core modules |
+| **OPERATIONS.md** | Backup, restore, monitoring runbook | Running in production |
+| **CLAUDE.md** | Guidelines for Claude Code | AI-assisted development |
+| **LEARNINGS.md** | Setup gotchas + lessons learned | Debugging issues |
 
 ---
 
