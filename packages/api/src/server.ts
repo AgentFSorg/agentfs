@@ -27,9 +27,23 @@ export async function createApp(opts: { logger?: boolean } = {}): Promise<{ app:
 
   const app = Fastify({
     logger: opts.logger ?? true,
+    trustProxy: env.TRUST_PROXY,
     bodyLimit: 1024 * 1024, // 1MB
     connectionTimeout: 30_000,
     requestTimeout: 60_000
+  });
+
+  const log = (msg: string, meta?: Record<string, unknown>) => {
+    if (typeof (app as any).log?.info === "function") (app as any).log.info(meta ?? {}, msg);
+    else console.info(msg, meta ?? {});
+  };
+
+  log("agentfs config", {
+    node_env: env.NODE_ENV,
+    trust_proxy: env.TRUST_PROXY,
+    enable_metrics: env.ENABLE_METRICS,
+    metrics_token_set: Boolean(env.METRICS_TOKEN),
+    preauth_rate_limit_per_minute: env.PREAUTH_RATE_LIMIT_PER_MINUTE
   });
 
   // Minimal pre-auth throttling (per-process). Applies before auth verification and DB access.
@@ -112,4 +126,3 @@ export async function createApp(opts: { logger?: boolean } = {}): Promise<{ app:
 
   return { app, env };
 }
-

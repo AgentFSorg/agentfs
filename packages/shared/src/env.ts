@@ -39,6 +39,8 @@ const EnvSchema = z.object({
   RATE_LIMIT_REQUESTS_PER_MINUTE: z.coerce.number().optional().default(120),
   PREAUTH_RATE_LIMIT_PER_MINUTE: z.coerce.number().optional().default(600),
 
+  TRUST_PROXY: z.coerce.boolean().optional().default(false),
+
   // Metrics gating
   ENABLE_METRICS: z.coerce.boolean().optional(),
   METRICS_TOKEN: z.string().optional().default(""),
