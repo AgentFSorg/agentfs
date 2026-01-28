@@ -20,6 +20,35 @@ function sha256(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
+function escapeSqlLikeLiteral(input: string): string {
+  // Escape LIKE metacharacters to ensure prefix filters behave as "startsWith" on literal strings.
+  return input.replace(/[\\%_]/g, "\\$&");
+}
+
+function normalizeGlobPattern(input: string): string {
+  if (!input || typeof input !== "string") throw new Error("Invalid glob pattern");
+  if (!input.startsWith("/")) throw new Error("Glob pattern must start with '/'");
+  if (input.length > 512) throw new Error("Glob pattern too long");
+  let p = input.replace(/\/+/g, "/");
+  if (p.length > 1 && p.endsWith("/")) p = p.slice(0, -1);
+  const segs = p.split("/").slice(1);
+  for (const s of segs) {
+    if (s.length === 0) throw new Error("Empty glob segment");
+    if (s === "." || s === "..") throw new Error("Invalid glob segment");
+  }
+  return p;
+}
+
+function getIdempotencyKey(req: { headers: Record<string, unknown> }): string | undefined {
+  const raw = req.headers["idempotency-key"];
+  if (typeof raw !== "string") return undefined;
+  const key = raw.trim();
+  if (!key) return undefined;
+  if (key.length > 128) throw new Error("Invalid Idempotency-Key");
+  if (!/^[a-zA-Z0-9_-]+$/.test(key)) throw new Error("Invalid Idempotency-Key");
+  return key;
+}
+
 export async function memoryRoutes(app: FastifyInstance) {
   app.post("/v1/put", async (req, reply) => {
     const ctx = await authenticate(req);
@@ -45,7 +74,12 @@ export async function memoryRoutes(app: FastifyInstance) {
     const body = Body.parse(req.body);
 
     // Check idempotency key if provided
-    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+    let idempotencyKey: string | undefined;
+    try {
+      idempotencyKey = getIdempotencyKey(req as any);
+    } catch {
+      throw Object.assign(new Error("Invalid Idempotency-Key"), { statusCode: 400, code: "INVALID_IDEMPOTENCY_KEY" });
+    }
     if (idempotencyKey) {
       const cached = await checkIdempotency<{ ok: boolean; version_id: string; created_at: string }>(
         ctx.tenantId,
@@ -112,6 +146,14 @@ export async function memoryRoutes(app: FastifyInstance) {
     const ctx = await authenticate(req);
     requireScope(ctx, "memory:read");
 
+    // Rate limiting
+    const env = getEnv();
+    const rateResult = checkRateLimit(ctx.tenantId, "get", env.RATE_LIMIT_REQUESTS_PER_MINUTE);
+    applyRateLimitHeaders(reply, rateResult, env.RATE_LIMIT_REQUESTS_PER_MINUTE);
+    if (!rateResult.allowed) {
+      throw Object.assign(new Error("Rate limit exceeded"), { statusCode: 429, code: "RATE_LIMIT_EXCEEDED" });
+    }
+
     const Body = z.object({
       agent_id: z.string().min(1),
       path: z.string().min(1)
@@ -153,6 +195,14 @@ export async function memoryRoutes(app: FastifyInstance) {
     const ctx = await authenticate(req);
     requireScope(ctx, "memory:write");
 
+    // Rate limiting
+    const env = getEnv();
+    const rateResult = checkRateLimit(ctx.tenantId, "delete", env.RATE_LIMIT_REQUESTS_PER_MINUTE);
+    applyRateLimitHeaders(reply, rateResult, env.RATE_LIMIT_REQUESTS_PER_MINUTE);
+    if (!rateResult.allowed) {
+      throw Object.assign(new Error("Rate limit exceeded"), { statusCode: 429, code: "RATE_LIMIT_EXCEEDED" });
+    }
+
     const Body = z.object({
       agent_id: z.string().min(1),
       path: z.string().min(1)
@@ -160,7 +210,12 @@ export async function memoryRoutes(app: FastifyInstance) {
     const body = Body.parse(req.body);
 
     // Check idempotency key if provided
-    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+    let idempotencyKey: string | undefined;
+    try {
+      idempotencyKey = getIdempotencyKey(req as any);
+    } catch {
+      throw Object.assign(new Error("Invalid Idempotency-Key"), { statusCode: 400, code: "INVALID_IDEMPOTENCY_KEY" });
+    }
     if (idempotencyKey) {
       const cached = await checkIdempotency<{ ok: boolean; deleted: boolean; version_id: string; created_at: string }>(
         ctx.tenantId,
@@ -209,6 +264,14 @@ export async function memoryRoutes(app: FastifyInstance) {
     const ctx = await authenticate(req);
     requireScope(ctx, "memory:read");
 
+    // Rate limiting
+    const env = getEnv();
+    const rateResult = checkRateLimit(ctx.tenantId, "history", env.RATE_LIMIT_REQUESTS_PER_MINUTE);
+    applyRateLimitHeaders(reply, rateResult, env.RATE_LIMIT_REQUESTS_PER_MINUTE);
+    if (!rateResult.allowed) {
+      throw Object.assign(new Error("Rate limit exceeded"), { statusCode: 429, code: "RATE_LIMIT_EXCEEDED" });
+    }
+
     const Body = z.object({
       agent_id: z.string().min(1),
       path: z.string().min(1),
@@ -244,6 +307,14 @@ export async function memoryRoutes(app: FastifyInstance) {
     const ctx = await authenticate(req);
     requireScope(ctx, "memory:read");
 
+    // Rate limiting
+    const env = getEnv();
+    const rateResult = checkRateLimit(ctx.tenantId, "list", env.RATE_LIMIT_REQUESTS_PER_MINUTE);
+    applyRateLimitHeaders(reply, rateResult, env.RATE_LIMIT_REQUESTS_PER_MINUTE);
+    if (!rateResult.allowed) {
+      throw Object.assign(new Error("Rate limit exceeded"), { statusCode: 429, code: "RATE_LIMIT_EXCEEDED" });
+    }
+
     const Body = z.object({
       agent_id: z.string().min(1),
       prefix: z.string().min(1)
@@ -256,13 +327,14 @@ export async function memoryRoutes(app: FastifyInstance) {
       // List direct children under prefix. We'll do a simple approach:
       // fetch paths that start with prefix + '/' and then slice next segment.
       const prefixWithSlash = prefix === "/" ? "/" : `${prefix}/`;
+      const like = `${escapeSqlLikeLiteral(prefixWithSlash)}%`;
       const rows = await sql`
         SELECT e.path
         FROM entries e
         JOIN entry_versions ev ON ev.id = e.latest_version_id
         WHERE e.tenant_id=${ctx.tenantId}::uuid
           AND e.agent_id=${body.agent_id}
-          AND e.path LIKE ${prefixWithSlash + "%"}
+          AND e.path LIKE ${like} ESCAPE '\\'
           AND (ev.deleted_at IS NULL)
           AND (ev.expires_at IS NULL OR ev.expires_at > now())
         LIMIT 500
@@ -293,12 +365,21 @@ export async function memoryRoutes(app: FastifyInstance) {
     const ctx = await authenticate(req);
     requireScope(ctx, "memory:read");
 
+    // Rate limiting
+    const env = getEnv();
+    const rateResult = checkRateLimit(ctx.tenantId, "glob", env.RATE_LIMIT_REQUESTS_PER_MINUTE);
+    applyRateLimitHeaders(reply, rateResult, env.RATE_LIMIT_REQUESTS_PER_MINUTE);
+    if (!rateResult.allowed) {
+      throw Object.assign(new Error("Rate limit exceeded"), { statusCode: 429, code: "RATE_LIMIT_EXCEEDED" });
+    }
+
     const Body = z.object({
       agent_id: z.string().min(1),
-      pattern: z.string().min(1)
+      pattern: z.string().min(1).max(512).startsWith("/")
     });
     const body = Body.parse(req.body);
-    const { like } = globToSqlLike(body.pattern);
+    const pattern = normalizeGlobPattern(body.pattern);
+    const { like } = globToSqlLike(pattern);
 
     const sql = makeSql();
     try {
@@ -335,11 +416,11 @@ export async function memoryRoutes(app: FastifyInstance) {
     await incSearchQuota(ctx.tenantId);
 
     const Body = z.object({
-      agent_id: z.string().min(1),
+      agent_id: z.string().min(1).max(128).regex(/^[a-zA-Z0-9_-]+$/, "agent_id must be alphanumeric with hyphens/underscores"),
       query: z.string().min(1).max(2000),
       limit: z.number().int().min(1).max(50).optional().default(10),
-      path_prefix: z.string().optional(),
-      tags_any: z.array(z.string()).optional()
+      path_prefix: z.string().max(512).optional(),
+      tags_any: z.array(z.string().max(64)).max(20).optional()
     });
     const body = Body.parse(req.body);
 
@@ -352,40 +433,66 @@ export async function memoryRoutes(app: FastifyInstance) {
 
     // Embed the query
     const queryVec = await embedQuery(body.query);
-    const vecStr = `[${queryVec.join(",")}]`;
+    // Format vector as PostgreSQL array literal for pgvector
+    const vecLiteral = `[${queryVec.join(",")}]`;
 
     const sql = makeSql();
     try {
-      // Build dynamic query with optional filters
-      let pathFilter = "";
+      // Build path pattern for optional prefix filter (parameterized)
+      let pathPattern: string | null = null;
       if (body.path_prefix) {
         const prefix = normalizePath(body.path_prefix);
-        pathFilter = prefix === "/" ? "" : ` AND emb.path LIKE '${prefix.replace(/'/g, "''")}%'`;
+        if (prefix !== "/") {
+          pathPattern = `${escapeSqlLikeLiteral(prefix)}%`;
+        }
       }
 
       // Vector similarity search using pgvector cosine distance
-      const rows = await sql.unsafe(`
-        SELECT
-          emb.path,
-          emb.version_id,
-          ev.value_json,
-          ev.tags_json,
-          ev.created_at,
-          1 - (emb.embedding <=> '${vecStr}'::vector) as similarity
-        FROM embeddings emb
-        JOIN entry_versions ev ON ev.id = emb.version_id
-        JOIN entries e ON e.tenant_id = emb.tenant_id
-          AND e.agent_id = emb.agent_id
-          AND e.path = emb.path
-          AND e.latest_version_id = emb.version_id
-        WHERE emb.tenant_id = '${ctx.tenantId}'::uuid
-          AND emb.agent_id = '${body.agent_id}'
-          AND (ev.deleted_at IS NULL)
-          AND (ev.expires_at IS NULL OR ev.expires_at > now())
-          ${pathFilter}
-        ORDER BY emb.embedding <=> '${vecStr}'::vector ASC
-        LIMIT ${body.limit}
-      `);
+      // Use parameterized queries to prevent SQL injection
+      const rows = pathPattern
+        ? await sql`
+            SELECT
+              emb.path,
+              emb.version_id,
+              ev.value_json,
+              ev.tags_json,
+              ev.created_at,
+              1 - (emb.embedding <=> ${vecLiteral}::vector) as similarity
+            FROM embeddings emb
+            JOIN entry_versions ev ON ev.id = emb.version_id
+            JOIN entries e ON e.tenant_id = emb.tenant_id
+              AND e.agent_id = emb.agent_id
+              AND e.path = emb.path
+              AND e.latest_version_id = emb.version_id
+            WHERE emb.tenant_id = ${ctx.tenantId}::uuid
+              AND emb.agent_id = ${body.agent_id}
+              AND (ev.deleted_at IS NULL)
+              AND (ev.expires_at IS NULL OR ev.expires_at > now())
+              AND emb.path LIKE ${pathPattern} ESCAPE '\\'
+            ORDER BY emb.embedding <=> ${vecLiteral}::vector ASC
+            LIMIT ${body.limit}
+          `
+        : await sql`
+            SELECT
+              emb.path,
+              emb.version_id,
+              ev.value_json,
+              ev.tags_json,
+              ev.created_at,
+              1 - (emb.embedding <=> ${vecLiteral}::vector) as similarity
+            FROM embeddings emb
+            JOIN entry_versions ev ON ev.id = emb.version_id
+            JOIN entries e ON e.tenant_id = emb.tenant_id
+              AND e.agent_id = emb.agent_id
+              AND e.path = emb.path
+              AND e.latest_version_id = emb.version_id
+            WHERE emb.tenant_id = ${ctx.tenantId}::uuid
+              AND emb.agent_id = ${body.agent_id}
+              AND (ev.deleted_at IS NULL)
+              AND (ev.expires_at IS NULL OR ev.expires_at > now())
+            ORDER BY emb.embedding <=> ${vecLiteral}::vector ASC
+            LIMIT ${body.limit}
+          `;
 
       // Filter by tags if specified
       let results = rows.map((r: any) => ({
