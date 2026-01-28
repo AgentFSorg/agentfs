@@ -56,5 +56,6 @@ Deletes are tombstones, not physical deletions. A delete creates a new version w
 ## Future Considerations
 
 - Consider adding HNSW index for embeddings once data volume grows
-- Rate limiting currently uses daily counters; may need Redis for per-minute limits
-- Idempotency keys table exists but not yet implemented in routes
+- Rate limiting is in-memory per process; multi-instance deployments will need a shared limiter (e.g., Redis) or a gateway-level limiter
+- Idempotency keys are implemented for `PUT` and `DELETE` via `Idempotency-Key` and stored for 24h (`packages/api/src/idempotency.ts`)
+- SDK contract tests run an in-process API server to keep `pnpm test` green without manual coordination (`packages/sdk/src/index.test.ts`)
