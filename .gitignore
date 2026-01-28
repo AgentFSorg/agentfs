@@ -33,3 +33,6 @@ coverage/
 # Misc
 *.tmp
 *.temp
+
+# Documentation artifacts
+/docs/
