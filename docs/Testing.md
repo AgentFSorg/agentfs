@@ -31,3 +31,9 @@ On every PR:
 2. Typecheck
 3. Unit tests
 4. Integration tests with fresh DB (migrations included)
+
+## Local verification
+Run the full local gate (build + lint + tests + smoke):
+```bash
+pnpm verify
+```
