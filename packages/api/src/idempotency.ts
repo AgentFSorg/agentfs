@@ -69,11 +69,12 @@ export async function storeIdempotency(
 ): Promise<void> {
   const requestHash = hashRequest(body);
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_HOURS * 60 * 60 * 1000);
+  const responseJson = response as any;
   const sql = makeSql();
   try {
     await sql`
       INSERT INTO idempotency_keys (tenant_id, key, request_hash, response_json, expires_at)
-      VALUES (${tenantId}::uuid, ${key}, ${requestHash}, ${response}::jsonb, ${expiresAt})
+      VALUES (${tenantId}::uuid, ${key}, ${requestHash}, ${responseJson}::jsonb, ${expiresAt})
       ON CONFLICT (tenant_id, key) DO NOTHING
     `;
   } finally {
