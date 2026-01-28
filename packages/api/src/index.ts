@@ -19,12 +19,12 @@ async function main() {
   app.addHook("preHandler", async (req) => {
     const route = req.routeOptions?.url ?? req.url;
     const end = httpDuration.labels(route, req.method).startTimer();
-    // @ts-ignore
+    // @ts-expect-error timer property
     req.__agentfsTimerEnd = end;
   });
 
   app.addHook("onSend", async (req) => {
-    // @ts-ignore
+    // @ts-expect-error timer property
     const end = req.__agentfsTimerEnd;
     if (typeof end === "function") end();
   });

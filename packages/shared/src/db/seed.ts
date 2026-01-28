@@ -7,13 +7,13 @@ async function main() {
     const name = "default";
     const existing = await sql`SELECT id FROM tenants WHERE name=${name} LIMIT 1`;
     if (existing.length) {
-      // eslint-disable-next-line no-console
+       
       console.log("Tenant already exists:", existing[0].id);
       return;
     }
     const id = randomUUID();
     await sql`INSERT INTO tenants (id, name) VALUES (${id}::uuid, ${name})`;
-    // eslint-disable-next-line no-console
+     
     console.log("Created tenant:", id);
   } finally {
     await sql.end({ timeout: 5 });
@@ -21,7 +21,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exit(1);
 });

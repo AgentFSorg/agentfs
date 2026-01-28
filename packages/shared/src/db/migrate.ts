@@ -17,11 +17,11 @@ async function main() {
     for (const f of files) {
       const full = join(dir, f);
       const text = readFileSync(full, "utf8");
-      // eslint-disable-next-line no-console
+       
       console.log("Applying migration:", f);
       await sql.unsafe(text);
     }
-    // eslint-disable-next-line no-console
+     
     console.log("Migrations complete.");
   } finally {
     await sql.end({ timeout: 5 });
@@ -29,7 +29,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exit(1);
 });

@@ -17,5 +17,8 @@
     "db:migrate": "pnpm --filter @agentfs/shared db:migrate",
     "db:seed": "pnpm --filter @agentfs/shared db:seed",
     "create:key": "pnpm --filter @agentfs/shared create:key"
+  },
+  "devDependencies": {
+    "typescript-eslint": "^8.54.0"
   }
 }

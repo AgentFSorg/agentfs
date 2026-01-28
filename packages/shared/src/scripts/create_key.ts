@@ -25,11 +25,11 @@ async function main() {
       VALUES (${id}, ${tenantId}::uuid, ${secretHash}, 'default')
     `;
 
-    // eslint-disable-next-line no-console
+     
     console.log("API Key created:");
-    // eslint-disable-next-line no-console
+     
     console.log(full);
-    // eslint-disable-next-line no-console
+     
     console.log("Store this somewhere safe. It will not be shown again.");
   } finally {
     await sql.end({ timeout: 5 });
@@ -37,7 +37,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exit(1);
 });
