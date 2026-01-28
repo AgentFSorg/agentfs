@@ -407,8 +407,8 @@ export async function memoryRoutes(app: FastifyInstance) {
 
     // Rate limiting for search (more restrictive since it uses external APIs)
     const env = getEnv();
-    const rateResult = checkRateLimit(ctx.tenantId, "search", env.QUOTA_SEARCHES_PER_MINUTE);
-    applyRateLimitHeaders(reply, rateResult, env.QUOTA_SEARCHES_PER_MINUTE);
+    const rateResult = checkRateLimit(ctx.tenantId, "search", env.SEARCH_RATE_LIMIT_PER_MINUTE);
+    applyRateLimitHeaders(reply, rateResult, env.SEARCH_RATE_LIMIT_PER_MINUTE);
     if (!rateResult.allowed) {
       throw Object.assign(new Error("Rate limit exceeded"), { statusCode: 429, code: "RATE_LIMIT_EXCEEDED" });
     }

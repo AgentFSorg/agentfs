@@ -23,7 +23,7 @@ export async function incWriteQuota(tenantId: string, bytes: number) {
       RETURNING writes
     `;
     const writes = rows[0]!.writes as number;
-    if (writes > env.QUOTA_WRITES_PER_DAY) {
+    if (writes > env.WRITE_QUOTA_PER_DAY) {
       quotaDenials.labels("writes").inc();
       throw Object.assign(new Error("Quota exceeded"), { statusCode: 429, code: "QUOTA_WRITES_PER_DAY" });
     }
@@ -45,8 +45,7 @@ export async function incSearchQuota(tenantId: string) {
       RETURNING searches
     `;
     const searches = rows[0]!.searches as number;
-    // This is a daily counter; per-minute limiting can be added later (Redis or leaky bucket).
-    if (searches > env.QUOTA_SEARCHES_PER_MINUTE * 60 * 24) {
+    if (searches > env.SEARCH_QUOTA_PER_DAY) {
       quotaDenials.labels("searches").inc();
       throw Object.assign(new Error("Quota exceeded"), { statusCode: 429, code: "QUOTA_SEARCHES" });
     }
@@ -68,7 +67,7 @@ export async function incEmbedQuota(tenantId: string, tokens: number) {
       RETURNING embed_tokens
     `;
     const embedTokens = rows[0]!.embed_tokens as number;
-    if (embedTokens > env.QUOTA_EMBED_TOKENS_PER_DAY) {
+    if (embedTokens > env.EMBED_TOKENS_QUOTA_PER_DAY) {
       quotaDenials.labels("embed_tokens").inc();
       throw Object.assign(new Error("Quota exceeded"), { statusCode: 429, code: "QUOTA_EMBED_TOKENS_PER_DAY" });
     }
@@ -88,7 +87,7 @@ export async function checkEmbedQuota(tenantId: string): Promise<boolean> {
     `;
     if (!rows.length) return true;
     const embedTokens = rows[0]!.embed_tokens as number;
-    return embedTokens < env.QUOTA_EMBED_TOKENS_PER_DAY;
+    return embedTokens < env.EMBED_TOKENS_QUOTA_PER_DAY;
   } finally {
     await sql.end({ timeout: 5 });
   }
