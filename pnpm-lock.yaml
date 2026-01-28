@@ -52,6 +52,9 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
+      '@agentfs/api':
+        specifier: workspace:*
+        version: link:../api
       '@agentfs/shared':
         specifier: workspace:*
         version: link:../shared
@@ -64,6 +67,9 @@ importers:
       eslint:
         specifier: ^9.14.0
         version: 9.39.2
+      fastify:
+        specifier: ^5.2.1
+        version: 5.7.2
       typescript:
         specifier: ^5.6.3
         version: 5.9.3

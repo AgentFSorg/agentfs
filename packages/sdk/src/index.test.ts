@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { AgentFSClient } from "./index.js";
 import { makeSql } from "@agentfs/shared/src/db/client.js";
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import argon2 from "argon2";
+import Fastify from "fastify";
+import { memoryRoutes } from "@agentfs/api/src/routes/memory.js";
+import { adminRoutes } from "@agentfs/api/src/routes/admin.js";
 
 // Test setup: create a test tenant and API key
 let client: AgentFSClient;
@@ -10,9 +13,16 @@ let testTenantId: string;
 let testApiKey: string;
 let apiKeyId: string;
 
-const API_BASE = "http://localhost:8787";
+let apiBase: string;
+let app: ReturnType<typeof Fastify>;
 
 beforeAll(async () => {
+  app = Fastify({ logger: false });
+  app.get("/healthz", async () => ({ ok: true }));
+  await memoryRoutes(app);
+  await adminRoutes(app);
+  apiBase = await app.listen({ port: 0, host: "127.0.0.1" });
+
   const sql = makeSql();
   try {
     // Create test tenant
@@ -35,7 +45,7 @@ beforeAll(async () => {
     `;
 
     client = new AgentFSClient({
-      baseUrl: API_BASE,
+      baseUrl: apiBase,
       apiKey: testApiKey,
       agentId: "sdk-test-agent"
     });
@@ -45,6 +55,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (app) await app.close();
+
   const sql = makeSql();
   try {
     // Clean up test data (order matters due to foreign keys)
