@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { getEnv } from "@agentfs/shared/src/env.js";
 import { makeSql } from "@agentfs/shared/src/db/client.js";
+import { checkRateLimit, applyRateLimitHeaders } from "../ratelimit.js";
 import argon2 from "argon2";
 import { randomBytes } from "node:crypto";
 
@@ -14,6 +15,13 @@ export async function adminRoutes(app: FastifyInstance) {
   if (!env.ADMIN_BOOTSTRAP_TOKEN) return;
 
   app.post("/v1/admin/create-key", async (req, reply) => {
+    // Rate limiting for admin endpoints (stricter limit)
+    const rateResult = checkRateLimit("admin", "create-key", 10); // 10 per minute max
+    applyRateLimitHeaders(reply, rateResult, 10);
+    if (!rateResult.allowed) {
+      return reply.status(429).send({ error: { code: "RATE_LIMIT_EXCEEDED", message: "Too many requests" } });
+    }
+
     const Body = z.object({
       token: z.string().min(1),
       label: z.string().optional().default("default")

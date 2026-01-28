@@ -1,5 +1,7 @@
 import { getEnv } from "@agentfs/shared/src/env.js";
 
+const EMBEDDINGS_TIMEOUT_MS = 15_000;
+
 export async function embedQuery(text: string): Promise<number[]> {
   const env = getEnv();
   if (!env.OPENAI_API_KEY) {
@@ -8,21 +10,40 @@ export async function embedQuery(text: string): Promise<number[]> {
 
   const model = env.OPENAI_EMBED_MODEL || "text-embedding-3-small";
 
-  const res = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model,
-      input: text
-    })
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), EMBEDDINGS_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        input: text
+      }),
+      signal: controller.signal
+    });
+  } catch (err: any) {
+    console.error("Embeddings API request failed", { error: String(err?.message || err) });
+    throw Object.assign(
+      new Error("Embeddings service temporarily unavailable"),
+      { statusCode: 502, code: "EMBEDDINGS_API_ERROR" }
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!res.ok) {
     const body = await res.text();
-    throw Object.assign(new Error(`Embeddings API error: ${res.status}`), { statusCode: 502, code: "EMBEDDINGS_API_ERROR", details: body });
+    // Log full error for debugging, but don't expose to client
+    console.error(`Embeddings API error: ${res.status}`, { body });
+    throw Object.assign(
+      new Error("Embeddings service temporarily unavailable"),
+      { statusCode: 502, code: "EMBEDDINGS_API_ERROR" }
+    );
   }
 
   const json = await res.json() as { data?: { embedding?: number[] }[] };

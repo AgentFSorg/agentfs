@@ -8,7 +8,10 @@ async function main() {
   const env = getEnv();
 
   const app = Fastify({
-    logger: true
+    logger: true,
+    bodyLimit: 1024 * 1024,      // 1MB max body size
+    connectionTimeout: 30000,    // 30s connection timeout
+    requestTimeout: 60000        // 60s request timeout
   });
 
   app.addHook("onResponse", async (req, reply) => {
@@ -40,9 +43,22 @@ async function main() {
   await adminRoutes(app);
 
   app.setErrorHandler((err, _req, reply) => {
+    // Detect Zod validation errors (they have an 'issues' array)
+    if ((err as any).issues && Array.isArray((err as any).issues)) {
+      const zodErr = err as any;
+      const firstIssue = zodErr.issues[0];
+      const message = firstIssue?.message ?? "Validation error";
+      return reply.status(400).send({ error: { code: "VALIDATION_ERROR", message } });
+    }
+
     const status = (err as any).statusCode ?? 500;
-    const code = (err as any).code ?? "INTERNAL";
-    const message = (err as any).message ?? "Internal error";
+    let code = (err as any).code ?? "INTERNAL";
+    let message = (err as any).message ?? "Internal error";
+    if (status >= 500 && env.NODE_ENV === "production") {
+      // Avoid leaking internal details (DB errors, stack traces, upstream errors) in production.
+      code = "INTERNAL";
+      message = "Internal error";
+    }
     reply.status(status).send({ error: { code, message } });
   });
 
