@@ -1,10 +1,19 @@
 import { makeSql } from "@agentfs/shared/src/db/client.js";
 import { createHash } from "node:crypto";
+import { canonicalJsonStringify } from "./canonical-json.js";
 
 const IDEMPOTENCY_TTL_HOURS = 24;
 
-function hashRequest(body: unknown): string {
-  return createHash("sha256").update(JSON.stringify(body)).digest("hex");
+function sha256(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+function hashRequestCanonical(body: unknown): string {
+  return sha256(canonicalJsonStringify(body));
+}
+
+function hashRequestLegacy(body: unknown): string {
+  return sha256(JSON.stringify(body));
 }
 
 export type IdempotencyResult<T> =
@@ -20,7 +29,8 @@ export async function checkIdempotency<T>(
   key: string,
   body: unknown
 ): Promise<IdempotencyResult<T>> {
-  const requestHash = hashRequest(body);
+  const requestHash = hashRequestCanonical(body);
+  const legacyHash = hashRequestLegacy(body);
   const sql = makeSql();
   try {
     const rows = await sql`
@@ -45,7 +55,7 @@ export async function checkIdempotency<T>(
     }
 
     // Check if request hash matches
-    if (row.request_hash !== requestHash) {
+    if (row.request_hash !== requestHash && row.request_hash !== legacyHash) {
       throw Object.assign(
         new Error("Idempotency key reused with different request body"),
         { statusCode: 422, code: "IDEMPOTENCY_KEY_MISMATCH" }
@@ -67,7 +77,7 @@ export async function storeIdempotency(
   body: unknown,
   response: unknown
 ): Promise<void> {
-  const requestHash = hashRequest(body);
+  const requestHash = hashRequestCanonical(body);
   const expiresAt = new Date(Date.now() + IDEMPOTENCY_TTL_HOURS * 60 * 60 * 1000);
   const responseJson = response as any;
   const sql = makeSql();

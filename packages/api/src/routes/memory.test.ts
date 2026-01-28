@@ -508,6 +508,50 @@ describe("Memory Routes", () => {
       expect(res2.json().error?.code).toBe("IDEMPOTENCY_KEY_MISMATCH");
     });
 
+    it("should treat equivalent JSON bodies as the same for idempotency hashing", async () => {
+      const key = "idem_canon_" + Date.now();
+
+      const payload1 = JSON.stringify({
+        agent_id: "test",
+        path: "/idem/canonical",
+        value: { a: 1, b: 2 }
+      });
+
+      const payload2 = JSON.stringify({
+        agent_id: "test",
+        path: "/idem/canonical",
+        value: { b: 2, a: 1 }
+      });
+
+      const res1 = await app.inject({
+        method: "POST",
+        url: "/v1/put",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${ctx.apiKey}`,
+          "Idempotency-Key": key
+        },
+        payload: payload1
+      });
+      expect(res1.statusCode).toBe(200);
+      const v1 = res1.json().version_id;
+
+      const res2 = await app.inject({
+        method: "POST",
+        url: "/v1/put",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${ctx.apiKey}`,
+          "Idempotency-Key": key
+        },
+        payload: payload2
+      });
+      expect(res2.statusCode).toBe(200);
+      const v2 = res2.json().version_id;
+
+      expect(v2).toBe(v1);
+    });
+
     it("should treat % and _ literally in list prefix filters", async () => {
       await inject("POST", "/v1/put", { agent_id: "test", path: "/weird%prefix/a", value: 1 }, ctx.apiKey);
       await inject("POST", "/v1/put", { agent_id: "test", path: "/weirdXprefix/a", value: 2 }, ctx.apiKey);
