@@ -3,7 +3,7 @@
 **Date:** 2026-01-28 (Europe/Dublin)
 
 ## Summary
-- **Phase:** 0 (Foundations) - In Progress
+- **Phase:** 1 (Core Storage) - Complete
 - **Overall:** Green
 - **Top risk:** None currently
 
@@ -16,16 +16,18 @@
 - [x] Git repository initialized
 - [x] CI workflow created
 
-## In Progress
-- [ ] Run tests and verify CI passes
-- [ ] Phase 0 commit
+## Shipped (Phase 1)
+- [x] All CRUD routes verified working (PUT/GET/DELETE/LIST/GLOB/HISTORY)
+- [x] Integration tests for memory routes (17 tests)
+- [x] Glob unit tests (14 tests)
+- [x] TTL behavior tests
+- [x] Tenant isolation tests
 
-## Next Up (Phase 1)
-- [ ] Verify CRUD routes work manually
-- [ ] Add integration tests for memory routes
-- [ ] Add glob unit tests
-- [ ] TTL behavior tests
-- [ ] Tenant isolation tests
+## Next Up (Phase 2)
+- [ ] Implement embedding worker
+- [ ] Implement real /v1/search endpoint
+- [ ] Add embedding quota tracking
+- [ ] Add metrics for embedding jobs
 
 ## Metrics
 - Requests/day: N/A (not deployed)
