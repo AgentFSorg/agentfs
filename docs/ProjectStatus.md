@@ -3,7 +3,7 @@
 **Date:** 2026-01-28 (Europe/Dublin)
 
 ## Summary
-- **Phase:** 1 (Core Storage) - Complete
+- **Phase:** 2 (Search + Cost Controls) - Complete
 - **Overall:** Green
 - **Top risk:** None currently
 
@@ -23,11 +23,17 @@
 - [x] TTL behavior tests
 - [x] Tenant isolation tests
 
-## Next Up (Phase 2)
-- [ ] Implement embedding worker
-- [ ] Implement real /v1/search endpoint
-- [ ] Add embedding quota tracking
-- [ ] Add metrics for embedding jobs
+## Shipped (Phase 2)
+- [x] Embedding worker scaffolded (loop.ts, openai.ts)
+- [x] Real /v1/search endpoint with pgvector similarity
+- [x] Embedding quota tracking (incEmbedQuota, checkEmbedQuota)
+- [x] Metrics for embedding jobs and quota denials
+
+## Next Up (Phase 3)
+- [ ] Implement TypeScript SDK
+- [ ] Implement idempotency keys
+- [ ] Add rate limiting
+- [ ] Add contract tests
 
 ## Metrics
 - Requests/day: N/A (not deployed)
