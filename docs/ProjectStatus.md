@@ -39,6 +39,7 @@
 ## Ops/Quality
 - [x] `pnpm verify` (build + lint + tests + smoke)
 - [x] Pre-auth throttling for `/v1/*` (IP-based, in-memory)
+- [x] Hardening pass completed (metrics gating, proxy/IP guidance, canonical idempotency hashing)
 
 ## Shipped (Phase 4)
 - [x] Backup/restore runbook (OPERATIONS.md)

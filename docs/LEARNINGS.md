@@ -61,3 +61,5 @@ Deletes are tombstones, not physical deletions. A delete creates a new version w
 - SDK contract tests run an in-process API server to keep `pnpm test` green without manual coordination (`packages/sdk/src/index.test.ts`)
 - Migrations are tracked in `schema_migrations` and applied once (`packages/shared/src/db/migrate.ts`)
 - Search quota and search rate limiting are split into separate env vars to avoid unit confusion (`WRITE_QUOTA_PER_DAY`, `SEARCH_QUOTA_PER_DAY`, `SEARCH_RATE_LIMIT_PER_MINUTE`)
+- If you deploy behind a reverse proxy, configure `TRUST_PROXY` so `req.ip` reflects the real client IP (affects pre-auth throttling); see `docs/DEPLOYMENT.md`
+- Idempotency hashing uses canonical JSON (sorted keys) to avoid false mismatches when clients send semantically equivalent objects with different key order

@@ -23,3 +23,8 @@ Agent memory is an active market. AgentFS can win by shipping a reliable, determ
 ## MVP discipline (what we optimized for)
 - Secure-by-default ops: pre-auth throttling on `/v1/*`, metrics gated in production, upstream error redaction
 - Repeatable builds: `pnpm verify` + migrations tracked via `schema_migrations`
+
+## Final hardening decisions (v1.0)
+- `TRUST_PROXY` is an explicit deploy-time knob; default is `false` (direct-to-node).
+- `/metrics` is disabled in production unless `ENABLE_METRICS=true`, and requires `METRICS_TOKEN` when enabled.
+- Idempotency hashing uses canonical JSON to avoid key-order false mismatches.
