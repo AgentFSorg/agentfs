@@ -4,6 +4,7 @@ import { getEnv } from "@agentfs/shared/src/env.js";
 import { register, httpRequests, httpDuration } from "./metrics.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { adminRoutes } from "./routes/admin.js";
+import { adminEmbeddingsRoutes } from "./routes/admin-embeddings.js";
 import { checkTokenBucket } from "./preauth-ratelimit.js";
 
 function parseBearerToken(authHeader?: string): string | null {
@@ -38,6 +39,11 @@ export async function createApp(opts: { logger?: boolean } = {}): Promise<{ app:
     else console.info(msg, meta ?? {});
   };
 
+  const warn = (msg: string, meta?: Record<string, unknown>) => {
+    if (typeof (app as any).log?.warn === "function") (app as any).log.warn(meta ?? {}, msg);
+    else console.warn(msg, meta ?? {});
+  };
+
   log("agentfs config", {
     node_env: env.NODE_ENV,
     trust_proxy: env.TRUST_PROXY,
@@ -45,6 +51,24 @@ export async function createApp(opts: { logger?: boolean } = {}): Promise<{ app:
     metrics_token_set: Boolean(env.METRICS_TOKEN),
     preauth_rate_limit_per_minute: env.PREAUTH_RATE_LIMIT_PER_MINUTE
   });
+
+  // Production config lint: best-effort guardrails against accidental insecure deploys.
+  if (env.NODE_ENV === "production") {
+    if (process.env.TRUST_PROXY === undefined) {
+      warn("production config: TRUST_PROXY not explicitly set (defaults to false); verify reverse-proxy IP behavior", {
+        trust_proxy_effective: env.TRUST_PROXY
+      });
+    }
+
+    if (env.ENABLE_METRICS && !env.METRICS_TOKEN) {
+      // This is also enforced below (throws). Warn here to make the intent obvious in logs.
+      warn("production config: ENABLE_METRICS=true requires METRICS_TOKEN", {});
+    }
+
+    if (env.PREAUTH_RATE_LIMIT_PER_MINUTE <= 0) {
+      warn("production config: PREAUTH_RATE_LIMIT_PER_MINUTE is disabled; consider enabling pre-auth throttling", {});
+    }
+  }
 
   // Minimal pre-auth throttling (per-process). Applies before auth verification and DB access.
   app.addHook("onRequest", async (req, reply) => {
@@ -104,6 +128,7 @@ export async function createApp(opts: { logger?: boolean } = {}): Promise<{ app:
 
   await memoryRoutes(app);
   await adminRoutes(app);
+  await adminEmbeddingsRoutes(app);
 
   app.setErrorHandler((err, _req, reply) => {
     // Detect Zod validation errors (they have an 'issues' array)

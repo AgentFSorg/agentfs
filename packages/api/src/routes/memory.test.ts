@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import Fastify from "fastify";
 import { memoryRoutes } from "./memory.js";
 import { adminRoutes } from "./admin.js";
+import { adminEmbeddingsRoutes } from "./admin-embeddings.js";
 import { setupTestTenant, createSecondTenant, TestContext } from "../test-utils.js";
 import { makeSql } from "@agentfs/shared/src/db/client.js";
 import argon2 from "argon2";
@@ -19,6 +20,7 @@ describe("Memory Routes", () => {
     app.get("/healthz", async () => ({ ok: true }));
     await memoryRoutes(app);
     await adminRoutes(app);
+    await adminEmbeddingsRoutes(app);
 
     // Set up error handler (same as in index.ts)
     app.setErrorHandler((err, _req, reply) => {
@@ -636,6 +638,58 @@ describe("Memory Routes", () => {
         await sql2`DELETE FROM entry_versions WHERE tenant_id = ${ctx.tenantId}::uuid AND agent_id = ${agentId} AND path LIKE ${prefix + "/%"} `;
       } finally {
         await sql2.end({ timeout: 5 });
+      }
+    });
+  });
+
+  describe("Admin embeddings", () => {
+    it("should requeue failed embedding jobs for the tenant (admin scope)", async () => {
+      const { randomBytes } = await import("node:crypto");
+      const apiKeyId = "admin_" + randomBytes(8).toString("hex");
+      const secret = randomBytes(32).toString("base64url");
+      const adminKey = `${apiKeyId}.${secret}`;
+
+      const sql = makeSql();
+      try {
+        const secretHash = await argon2.hash(secret);
+        await sql`
+          INSERT INTO api_keys (id, tenant_id, secret_hash, label, scopes_json)
+          VALUES (${apiKeyId}, ${ctx.tenantId}::uuid, ${secretHash}, 'admin-test', '["admin"]'::jsonb)
+        `;
+
+        // Create a failed job
+        const verRows = await sql`
+          INSERT INTO entry_versions (tenant_id, agent_id, path, value_json, tags_json, importance, searchable, content_hash)
+          VALUES (${ctx.tenantId}::uuid, 'test', '/admin/requeue', '{}'::jsonb, '[]'::jsonb, 0, true, 'admin-test')
+          RETURNING id
+        `;
+        const versionId = verRows[0]!.id;
+
+        await sql`
+          INSERT INTO embedding_jobs (version_id, tenant_id, agent_id, path, status, attempts, last_error)
+          VALUES (${versionId}::uuid, ${ctx.tenantId}::uuid, 'test', '/admin/requeue', 'failed', 1, 'boom')
+        `;
+
+        const res = await inject("POST", "/v1/admin/embeddings/requeue", { status: "failed", limit: 10 }, adminKey);
+        expect(res.statusCode).toBe(200);
+        expect(res.json().ok).toBe(true);
+        expect(res.json().requeued).toBeGreaterThanOrEqual(1);
+
+        const jobRows = await sql`
+          SELECT status, last_error
+          FROM embedding_jobs
+          WHERE version_id = ${versionId}::uuid
+          LIMIT 1
+        `;
+        expect(jobRows[0]!.status).toBe("queued");
+        expect(jobRows[0]!.last_error).toBeNull();
+
+        // Cleanup
+        await sql`DELETE FROM embedding_jobs WHERE version_id = ${versionId}::uuid`;
+        await sql`DELETE FROM entry_versions WHERE id = ${versionId}::uuid`;
+        await sql`DELETE FROM api_keys WHERE id = ${apiKeyId}`;
+      } finally {
+        await sql.end({ timeout: 5 });
       }
     });
   });
