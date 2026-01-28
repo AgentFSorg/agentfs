@@ -1,6 +1,7 @@
 -- AgentFS MVP schema (0001)
 -- Requires pgvector extension
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS tenants (
