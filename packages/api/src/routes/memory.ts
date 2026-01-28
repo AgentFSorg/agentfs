@@ -6,6 +6,8 @@ import { makeSql } from "@agentfs/shared/src/db/client.js";
 import { authenticate, requireScope } from "../auth.js";
 import { incWriteQuota, incSearchQuota } from "../quotas.js";
 import { embedQuery } from "../embeddings.js";
+import { checkIdempotency, storeIdempotency } from "../idempotency.js";
+import { checkRateLimit, applyRateLimitHeaders } from "../ratelimit.js";
 import { getEnv } from "@agentfs/shared/src/env.js";
 import { createHash } from "node:crypto";
 
@@ -23,6 +25,14 @@ export async function memoryRoutes(app: FastifyInstance) {
     const ctx = await authenticate(req);
     requireScope(ctx, "memory:write");
 
+    // Rate limiting
+    const env = getEnv();
+    const rateResult = checkRateLimit(ctx.tenantId, "put", env.RATE_LIMIT_REQUESTS_PER_MINUTE);
+    applyRateLimitHeaders(reply, rateResult, env.RATE_LIMIT_REQUESTS_PER_MINUTE);
+    if (!rateResult.allowed) {
+      throw Object.assign(new Error("Rate limit exceeded"), { statusCode: 429, code: "RATE_LIMIT_EXCEEDED" });
+    }
+
     const Body = z.object({
       agent_id: z.string().min(1),
       path: z.string().min(1),
@@ -33,6 +43,19 @@ export async function memoryRoutes(app: FastifyInstance) {
       searchable: z.boolean().optional().default(false)
     });
     const body = Body.parse(req.body);
+
+    // Check idempotency key if provided
+    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+    if (idempotencyKey) {
+      const cached = await checkIdempotency<{ ok: boolean; version_id: string; created_at: string }>(
+        ctx.tenantId,
+        idempotencyKey,
+        body
+      );
+      if (cached.cached) {
+        return reply.send(cached.response);
+      }
+    }
 
     const path = normalizePath(body.path);
     if (isReservedPath(path)) throw Object.assign(new Error("Reserved path"), { statusCode: 403 });
@@ -72,7 +95,14 @@ export async function memoryRoutes(app: FastifyInstance) {
         `;
       }
 
-      return reply.send({ ok: true, version_id: ver.id, created_at: ver.created_at });
+      const response = { ok: true, version_id: ver.id, created_at: ver.created_at };
+
+      // Store idempotency key if provided
+      if (idempotencyKey) {
+        await storeIdempotency(ctx.tenantId, idempotencyKey, body, response);
+      }
+
+      return reply.send(response);
     } finally {
       await sql.end({ timeout: 5 });
     }
@@ -128,6 +158,20 @@ export async function memoryRoutes(app: FastifyInstance) {
       path: z.string().min(1)
     });
     const body = Body.parse(req.body);
+
+    // Check idempotency key if provided
+    const idempotencyKey = req.headers["idempotency-key"] as string | undefined;
+    if (idempotencyKey) {
+      const cached = await checkIdempotency<{ ok: boolean; deleted: boolean; version_id: string; created_at: string }>(
+        ctx.tenantId,
+        idempotencyKey,
+        body
+      );
+      if (cached.cached) {
+        return reply.send(cached.response);
+      }
+    }
+
     const path = normalizePath(body.path);
 
     const sql = makeSql();
@@ -147,7 +191,15 @@ export async function memoryRoutes(app: FastifyInstance) {
         ON CONFLICT (tenant_id, agent_id, path)
         DO UPDATE SET latest_version_id = ${ver.id}::uuid
       `;
-      return reply.send({ ok: true, deleted: true, version_id: ver.id, created_at: ver.created_at });
+
+      const response = { ok: true, deleted: true, version_id: ver.id, created_at: ver.created_at };
+
+      // Store idempotency key if provided
+      if (idempotencyKey) {
+        await storeIdempotency(ctx.tenantId, idempotencyKey, body, response);
+      }
+
+      return reply.send(response);
     } finally {
       await sql.end({ timeout: 5 });
     }
@@ -271,6 +323,15 @@ export async function memoryRoutes(app: FastifyInstance) {
   app.post("/v1/search", async (req, reply) => {
     const ctx = await authenticate(req);
     requireScope(ctx, "search:read");
+
+    // Rate limiting for search (more restrictive since it uses external APIs)
+    const env = getEnv();
+    const rateResult = checkRateLimit(ctx.tenantId, "search", env.QUOTA_SEARCHES_PER_MINUTE);
+    applyRateLimitHeaders(reply, rateResult, env.QUOTA_SEARCHES_PER_MINUTE);
+    if (!rateResult.allowed) {
+      throw Object.assign(new Error("Rate limit exceeded"), { statusCode: 429, code: "RATE_LIMIT_EXCEEDED" });
+    }
+
     await incSearchQuota(ctx.tenantId);
 
     const Body = z.object({
@@ -282,7 +343,6 @@ export async function memoryRoutes(app: FastifyInstance) {
     });
     const body = Body.parse(req.body);
 
-    const env = getEnv();
     if (!env.OPENAI_API_KEY) {
       return reply.send({
         results: [],

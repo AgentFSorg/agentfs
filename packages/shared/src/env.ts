@@ -29,6 +29,8 @@ const EnvSchema = z.object({
   QUOTA_EMBED_TOKENS_PER_DAY: z.coerce.number().optional().default(2_000_000),
   QUOTA_SEARCHES_PER_MINUTE: z.coerce.number().optional().default(120),
 
+  RATE_LIMIT_REQUESTS_PER_MINUTE: z.coerce.number().optional().default(120),
+
   ADMIN_BOOTSTRAP_TOKEN: z.string().optional().default("")
 });
 
