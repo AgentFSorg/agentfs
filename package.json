@@ -1,0 +1,21 @@
+{
+  "name": "agentfs",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "dev:api": "pnpm --filter @agentfs/api dev",
+    "dev:worker": "pnpm --filter @agentfs/worker dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down -v",
+    "db:migrate": "pnpm --filter @agentfs/shared db:migrate",
+    "db:seed": "pnpm --filter @agentfs/shared db:seed",
+    "create:key": "pnpm --filter @agentfs/shared create:key"
+  }
+}

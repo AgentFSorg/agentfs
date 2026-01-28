@@ -1,0 +1,13 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: agentfs
+    ports:
+      - "5432:5432"
+    volumes:
+      - agentfs_db:/var/lib/postgresql/data
+volumes:
+  agentfs_db:
