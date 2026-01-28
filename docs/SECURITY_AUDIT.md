@@ -204,3 +204,5 @@ AND e.path LIKE ${like} ESCAPE '\\'
 - `d8c46bb` — gate `/metrics` in production and add pre-auth throttling for `/v1/*`; split search quota vs rate limit env vars.
 - `2bb29a0` — track migrations in `schema_migrations`.
 - `993493f` — add regression tests for `/metrics` gating and embeddings error redaction.
+- `d786986` — fix TypeScript typing for `schema_migrations` transaction insert (keeps `pnpm build` green).
+- `ffe6e59` — make `pnpm build` green by excluding tests from API build and fixing `storeIdempotency` typing.
