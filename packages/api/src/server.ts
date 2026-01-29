@@ -7,6 +7,7 @@ import { memoryRoutes } from "./routes/memory.js";
 import { adminRoutes } from "./routes/admin.js";
 import { adminEmbeddingsRoutes } from "./routes/admin-embeddings.js";
 import { signupRoutes } from "./routes/signup.js";
+import { walletSignupRoutes } from "./routes/signup-wallet.js";
 import { checkTokenBucket } from "./preauth-ratelimit.js";
 
 function parseBearerToken(authHeader?: string): string | null {
@@ -143,6 +144,7 @@ export async function createApp(opts: { logger?: boolean } = {}): Promise<{ app:
   await adminRoutes(app);
   await adminEmbeddingsRoutes(app);
   await signupRoutes(app);
+  await walletSignupRoutes(app);
 
   app.setErrorHandler((err, _req, reply) => {
     // Detect Zod validation errors (they have an 'issues' array)

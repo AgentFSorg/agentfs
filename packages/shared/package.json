@@ -14,6 +14,7 @@
     "create:key": "tsx src/scripts/create_key.ts"
   },
   "dependencies": {
+    "@solana/web3.js": "1",
     "argon2": "^0.41.1",
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.36.4",
