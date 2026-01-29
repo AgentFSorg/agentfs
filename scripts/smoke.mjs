@@ -40,7 +40,7 @@ async function main() {
   const port = await pickFreePort();
   const base = `http://127.0.0.1:${port}`;
 
-  const child = spawn("pnpm", ["--filter", "@agentfs/api", "exec", "tsx", "src/index.ts"], {
+  const child = spawn("pnpm", ["--filter", "@agentos/api", "exec", "tsx", "src/index.ts"], {
     stdio: "inherit",
     env: {
       ...process.env,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { makeSql } from "@agentfs/shared/src/db/client.js";
+import { makeSql } from "@agentos/shared/src/db/client.js";
 import { randomUUID } from "node:crypto";
 import { runLoop } from "./loop.js";
 

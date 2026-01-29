@@ -1,4 +1,4 @@
--- AgentFS schema hardening (0002)
+-- AgentOS schema hardening (0002)
 -- Adds CHECK constraints and performance indexes
 
 -- Add CHECK constraint for embedding_jobs.status

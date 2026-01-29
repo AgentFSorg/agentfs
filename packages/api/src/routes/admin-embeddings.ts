@@ -1,6 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { makeSql } from "@agentfs/shared/src/db/client.js";
+import { makeSql } from "@agentos/shared/src/db/client.js";
 import { authenticate, requireScope } from "../auth.js";
 
 export async function adminEmbeddingsRoutes(app: FastifyInstance) {

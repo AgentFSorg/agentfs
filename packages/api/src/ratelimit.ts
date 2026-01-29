@@ -1,4 +1,4 @@
-import { getEnv } from "@agentfs/shared/src/env.js";
+import { getEnv } from "@agentos/shared/src/env.js";
 
 /**
  * Simple in-memory sliding window rate limiter.

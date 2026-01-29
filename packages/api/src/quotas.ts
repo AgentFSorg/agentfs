@@ -1,5 +1,5 @@
-import { getEnv } from "@agentfs/shared/src/env.js";
-import { makeSql } from "@agentfs/shared/src/db/client.js";
+import { getEnv } from "@agentos/shared/src/env.js";
+import { makeSql } from "@agentos/shared/src/db/client.js";
 import { quotaDenials } from "./metrics.js";
 
 function todayUtc(): string {

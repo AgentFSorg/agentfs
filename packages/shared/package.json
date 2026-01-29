@@ -1,11 +1,11 @@
 {
-  "name": "@agentfs/shared",
+  "name": "@agentos/shared",
   "version": "0.1.0",
   "type": "module",
   "private": true,
   "main": "dist/index.js",
   "scripts": {
-    "dev": "echo \"@agentfs/shared has no dev server\"",
+    "dev": "echo \"@agentos/shared has no dev server\"",
     "build": "tsc -p tsconfig.json",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run --passWithNoTests",

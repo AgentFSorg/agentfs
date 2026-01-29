@@ -14,7 +14,7 @@ importers:
 
   packages/api:
     dependencies:
-      '@agentfs/shared':
+      '@agentos/shared':
         specifier: workspace:*
         version: link:../shared
       argon2:
@@ -52,10 +52,10 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
     devDependencies:
-      '@agentfs/api':
+      '@agentos/api':
         specifier: workspace:*
         version: link:../api
-      '@agentfs/shared':
+      '@agentos/shared':
         specifier: workspace:*
         version: link:../shared
       '@types/node':
@@ -113,7 +113,7 @@ importers:
 
   packages/worker:
     dependencies:
-      '@agentfs/shared':
+      '@agentos/shared':
         specifier: workspace:*
         version: link:../shared
       zod:

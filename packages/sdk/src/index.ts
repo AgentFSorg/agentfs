@@ -1,4 +1,4 @@
-export type AgentFSClientOpts = {
+export type AgentOSClientOpts = {
   baseUrl: string;
   apiKey: string;
   agentId?: string;
@@ -116,12 +116,12 @@ async function post<T>(
   return json as T;
 }
 
-export class AgentFSClient {
+export class AgentOSClient {
   readonly baseUrl: string;
   readonly apiKey: string;
   readonly agentId: string;
 
-  constructor(opts: AgentFSClientOpts) {
+  constructor(opts: AgentOSClientOpts) {
     this.baseUrl = opts.baseUrl.replace(/\/$/, "");
     this.apiKey = opts.apiKey;
     this.agentId = opts.agentId || "default";

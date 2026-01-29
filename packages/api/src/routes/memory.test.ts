@@ -4,7 +4,7 @@ import { memoryRoutes } from "./memory.js";
 import { adminRoutes } from "./admin.js";
 import { adminEmbeddingsRoutes } from "./admin-embeddings.js";
 import { setupTestTenant, createSecondTenant, TestContext } from "../test-utils.js";
-import { makeSql } from "@agentfs/shared/src/db/client.js";
+import { makeSql } from "@agentos/shared/src/db/client.js";
 import argon2 from "argon2";
 import { randomBytes } from "node:crypto";
 

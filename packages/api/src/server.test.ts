@@ -56,7 +56,7 @@ describe("server", () => {
             headers: { Authorization: "Bearer secret-token" }
           });
           expect(ok.statusCode).toBe(200);
-          expect(ok.body).toContain("agentfs_http_requests_total");
+          expect(ok.body).toContain("agentos_http_requests_total");
         } finally {
           await app.close();
         }

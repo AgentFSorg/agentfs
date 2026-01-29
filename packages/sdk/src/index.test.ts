@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { AgentFSClient } from "./index.js";
-import { makeSql } from "@agentfs/shared/src/db/client.js";
+import { AgentOSClient } from "./index.js";
+import { makeSql } from "@agentos/shared/src/db/client.js";
 import { randomBytes } from "node:crypto";
 import argon2 from "argon2";
 import Fastify from "fastify";
-import { memoryRoutes } from "@agentfs/api/src/routes/memory.js";
-import { adminRoutes } from "@agentfs/api/src/routes/admin.js";
+import { memoryRoutes } from "@agentos/api/src/routes/memory.js";
+import { adminRoutes } from "@agentos/api/src/routes/admin.js";
 
 // Test setup: create a test tenant and API key
-let client: AgentFSClient;
+let client: AgentOSClient;
 let testTenantId: string;
 let testApiKey: string;
 let apiKeyId: string;
@@ -44,7 +44,7 @@ beforeAll(async () => {
       VALUES (${apiKeyId}, ${testTenantId}::uuid, ${secretHash}, 'sdk-test', '["memory:read","memory:write","search:read"]'::jsonb)
     `;
 
-    client = new AgentFSClient({
+    client = new AgentOSClient({
       baseUrl: apiBase,
       apiKey: testApiKey,
       agentId: "sdk-test-agent"
@@ -73,7 +73,7 @@ afterAll(async () => {
   }
 });
 
-describe("AgentFSClient", () => {
+describe("AgentOSClient", () => {
   describe("put/get/delete", () => {
     it("should put and get a value", async () => {
       const putResult = await client.put({

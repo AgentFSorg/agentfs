@@ -1,10 +1,12 @@
 {
-  "name": "@agentos/sdk",
+  "name": "@agentos/eliza-plugin",
   "version": "0.1.0",
   "type": "module",
-  "private": true,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "description": "AgentOS memory provider for ElizaOS — persistent, versioned, searchable agent memory",
+  "keywords": ["agentos", "elizaos", "ai16z", "eliza", "agent", "memory", "solana"],
+  "license": "MIT",
   "scripts": {
     "dev": "tsc -p tsconfig.json --watch",
     "build": "tsc -p tsconfig.json",
@@ -12,15 +14,14 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "zod": "^3.23.8"
+    "@agentos/sdk": "workspace:*"
+  },
+  "peerDependencies": {
+    "@elizaos/core": ">=0.1.0"
   },
   "devDependencies": {
-    "@agentos/api": "workspace:*",
-    "@agentos/shared": "workspace:*",
     "@types/node": "^22.10.2",
-    "argon2": "^0.41.1",
     "eslint": "^9.14.0",
-    "fastify": "^5.2.1",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"
   }

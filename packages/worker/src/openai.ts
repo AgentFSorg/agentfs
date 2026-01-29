@@ -1,4 +1,4 @@
-import { getEnv } from "@agentfs/shared/src/env.js";
+import { getEnv } from "@agentos/shared/src/env.js";
 
 const EMBEDDINGS_TIMEOUT_MS = 15_000;
 

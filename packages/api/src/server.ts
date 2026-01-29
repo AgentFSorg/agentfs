@@ -1,6 +1,6 @@
 import Fastify, { FastifyInstance } from "fastify";
 import { timingSafeEqual } from "node:crypto";
-import { getEnv } from "@agentfs/shared/src/env.js";
+import { getEnv } from "@agentos/shared/src/env.js";
 import { register, httpRequests, httpDuration } from "./metrics.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { adminRoutes } from "./routes/admin.js";
@@ -44,7 +44,7 @@ export async function createApp(opts: { logger?: boolean } = {}): Promise<{ app:
     else console.warn(msg, meta ?? {});
   };
 
-  log("agentfs config", {
+  log("agentos config", {
     node_env: env.NODE_ENV,
     trust_proxy: env.TRUST_PROXY,
     enable_metrics: env.ENABLE_METRICS,
@@ -97,12 +97,12 @@ export async function createApp(opts: { logger?: boolean } = {}): Promise<{ app:
     const route = req.routeOptions?.url ?? req.url;
     const end = httpDuration.labels(route, req.method).startTimer();
     // @ts-expect-error timer property
-    req.__agentfsTimerEnd = end;
+    req.__agentosTimerEnd = end;
   });
 
   app.addHook("onSend", async (req) => {
     // @ts-expect-error timer property
-    const end = req.__agentfsTimerEnd;
+    const end = req.__agentosTimerEnd;
     if (typeof end === "function") end();
   });
 

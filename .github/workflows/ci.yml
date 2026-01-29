@@ -16,7 +16,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: agentfs
+          POSTGRES_DB: agentos
         ports:
           - 5432:5432
         options: >-
@@ -42,7 +42,7 @@ jobs:
 
       - name: Run migrations
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/agentfs
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/agentos
         run: pnpm db:migrate
 
       - name: Lint
@@ -50,5 +50,5 @@ jobs:
 
       - name: Test
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/agentfs
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/agentos
         run: pnpm test

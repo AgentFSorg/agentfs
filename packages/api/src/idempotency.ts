@@ -1,4 +1,4 @@
-import { makeSql } from "@agentfs/shared/src/db/client.js";
+import { makeSql } from "@agentos/shared/src/db/client.js";
 import { createHash } from "node:crypto";
 import { canonicalJsonStringify } from "./canonical-json.js";
 

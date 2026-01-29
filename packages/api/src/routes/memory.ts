@@ -1,14 +1,14 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { normalizePath, isReservedPath } from "@agentfs/shared/src/path.js";
-import { globToSqlLike } from "@agentfs/shared/src/glob.js";
-import { makeSql } from "@agentfs/shared/src/db/client.js";
+import { normalizePath, isReservedPath } from "@agentos/shared/src/path.js";
+import { globToSqlLike } from "@agentos/shared/src/glob.js";
+import { makeSql } from "@agentos/shared/src/db/client.js";
 import { authenticate, requireScope } from "../auth.js";
 import { incWriteQuota, incSearchQuota } from "../quotas.js";
 import { embedQuery } from "../embeddings.js";
 import { checkIdempotency, storeIdempotency } from "../idempotency.js";
 import { checkRateLimit, applyRateLimitHeaders } from "../ratelimit.js";
-import { getEnv } from "@agentfs/shared/src/env.js";
+import { getEnv } from "@agentos/shared/src/env.js";
 import { createHash } from "node:crypto";
 
 function stableJson(value: unknown): string {

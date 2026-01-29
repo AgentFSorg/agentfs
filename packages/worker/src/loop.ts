@@ -1,4 +1,4 @@
-import { makeSql } from "@agentfs/shared/src/db/client.js";
+import { makeSql } from "@agentos/shared/src/db/client.js";
 import { embedText } from "./openai.js";
 
 function buildEmbeddingText(path: string, value: unknown, tags: unknown): string {

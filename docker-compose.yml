@@ -4,10 +4,10 @@ services:
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
-      POSTGRES_DB: agentfs
+      POSTGRES_DB: agentos
     ports:
       - "5432:5432"
     volumes:
-      - agentfs_db:/var/lib/postgresql/data
+      - agentos_db:/var/lib/postgresql/data
 volumes:
-  agentfs_db:
+  agentos_db:

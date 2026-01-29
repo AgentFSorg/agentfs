@@ -1,5 +1,5 @@
 {
-  "name": "@agentfs/worker",
+  "name": "@agentos/worker",
   "version": "0.1.0",
   "type": "module",
   "private": true,
@@ -11,7 +11,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@agentfs/shared": "workspace:*",
+    "@agentos/shared": "workspace:*",
     "zod": "^3.23.8"
   },
   "devDependencies": {

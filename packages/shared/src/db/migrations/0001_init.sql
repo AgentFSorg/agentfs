@@ -1,4 +1,4 @@
--- AgentFS MVP schema (0001)
+-- AgentOS MVP schema (0001)
 -- Requires pgvector extension
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
