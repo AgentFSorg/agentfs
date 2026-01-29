@@ -1,10 +1,12 @@
 import Fastify, { FastifyInstance } from "fastify";
+import cors from "@fastify/cors";
 import { timingSafeEqual } from "node:crypto";
 import { getEnv } from "@agentos/shared/src/env.js";
 import { register, httpRequests, httpDuration } from "./metrics.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { adminRoutes } from "./routes/admin.js";
 import { adminEmbeddingsRoutes } from "./routes/admin-embeddings.js";
+import { signupRoutes } from "./routes/signup.js";
 import { checkTokenBucket } from "./preauth-ratelimit.js";
 
 function parseBearerToken(authHeader?: string): string | null {
@@ -32,6 +34,17 @@ export async function createApp(opts: { logger?: boolean } = {}): Promise<{ app:
     bodyLimit: 1024 * 1024, // 1MB
     connectionTimeout: 30_000,
     requestTimeout: 60_000
+  });
+
+  await app.register(cors, {
+    origin: [
+      "https://agentos.software",
+      "https://www.agentos.software",
+      /^https?:\/\/localhost(:\d+)?$/,
+    ],
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: false,
   });
 
   const log = (msg: string, meta?: Record<string, unknown>) => {
@@ -129,6 +142,7 @@ export async function createApp(opts: { logger?: boolean } = {}): Promise<{ app:
   await memoryRoutes(app);
   await adminRoutes(app);
   await adminEmbeddingsRoutes(app);
+  await signupRoutes(app);
 
   app.setErrorHandler((err, _req, reply) => {
     // Detect Zod validation errors (they have an 'issues' array)
