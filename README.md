@@ -99,8 +99,8 @@ AgentOS is fully open source. Run your own instance:
 
 ```bash
 # Clone
-git clone https://github.com/AgentFSorg/agentfs.git
-cd agentfs
+git clone https://github.com/AgentOSsoftware/agentOS.git
+cd agentOS
 
 # Start Postgres with pgvector
 docker compose up -d
