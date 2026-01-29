@@ -41,6 +41,7 @@ export async function createApp(opts: { logger?: boolean } = {}): Promise<{ app:
     origin: [
       "https://agentos.software",
       "https://www.agentos.software",
+      /^https:\/\/.*\.vercel\.app$/,
       /^https?:\/\/localhost(:\d+)?$/,
     ],
     methods: ["GET", "POST", "OPTIONS"],
