@@ -120,13 +120,43 @@ export async function memoryRoutes(app: FastifyInstance) {
         DO UPDATE SET latest_version_id = ${ver.id}::uuid
       `;
 
-      // Enqueue embedding job only if searchable=true AND we have an embeddings provider configured.
+      // Generate embedding inline if searchable=true AND we have an embeddings provider configured.
       if (body.searchable) {
-        await sql`
-          INSERT INTO embedding_jobs (version_id, tenant_id, agent_id, path, status)
-          VALUES (${ver.id}::uuid, ${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, 'queued')
-          ON CONFLICT (version_id) DO NOTHING
-        `;
+        const env = getEnv();
+        if (env.OPENAI_API_KEY) {
+          try {
+            const textToEmbed = typeof body.value === "string" ? body.value : JSON.stringify(body.value);
+            const vec = await embedQuery(textToEmbed);
+            const vecLiteral = `[${vec.join(",")}]`;
+            const model = env.OPENAI_EMBED_MODEL || "text-embedding-3-small";
+            await sql`
+              INSERT INTO embeddings (version_id, tenant_id, agent_id, path, model, embedding)
+              VALUES (${ver.id}::uuid, ${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, ${model}, ${vecLiteral}::vector)
+              ON CONFLICT (version_id) DO UPDATE SET embedding = ${vecLiteral}::vector
+            `;
+            // Mark job as done
+            await sql`
+              INSERT INTO embedding_jobs (version_id, tenant_id, agent_id, path, status)
+              VALUES (${ver.id}::uuid, ${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, 'done')
+              ON CONFLICT (version_id) DO UPDATE SET status = 'done', updated_at = now()
+            `;
+          } catch (embErr: any) {
+            // Don't fail the write if embedding fails — queue for retry
+            console.error("Inline embedding failed, queueing for retry", { error: embErr?.message });
+            await sql`
+              INSERT INTO embedding_jobs (version_id, tenant_id, agent_id, path, status, last_error)
+              VALUES (${ver.id}::uuid, ${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, 'queued', ${embErr?.message ?? 'unknown'})
+              ON CONFLICT (version_id) DO NOTHING
+            `;
+          }
+        } else {
+          // No API key — just queue for later
+          await sql`
+            INSERT INTO embedding_jobs (version_id, tenant_id, agent_id, path, status)
+            VALUES (${ver.id}::uuid, ${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, 'queued')
+            ON CONFLICT (version_id) DO NOTHING
+          `;
+        }
       }
 
       const response = { ok: true, version_id: ver.id, created_at: ver.created_at };

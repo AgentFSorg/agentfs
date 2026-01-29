@@ -1,0 +1,17 @@
+node_modules
+.git
+.env
+.env.*
+dist
+*.log
+coverage
+.claude
+docs
+scripts
+*.md
+!README.md
+fly.toml
+docker-compose.yml
+.dockerignore
+Dockerfile
+packages/eliza-plugin
