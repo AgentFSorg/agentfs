@@ -1,0 +1,18 @@
+{
+  "name": "@agentos/clawdbot-skill",
+  "version": "1.0.0",
+  "description": "AgentOS persistent memory skill for Clawdbot — auto-sync, intelligence loop, semantic search",
+  "type": "module",
+  "scripts": {
+    "init": "node scripts/init.mjs",
+    "pull": "node scripts/pull-context.mjs",
+    "sync": "node scripts/sync-daemon.mjs",
+    "search": "node scripts/search.mjs"
+  },
+  "keywords": ["agentos", "clawdbot", "memory", "ai-agent", "persistent-memory", "claude"],
+  "author": "MoonstoneLabs <hello@moonstonelabs.co.za>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
