@@ -391,6 +391,53 @@ export async function memoryRoutes(app: FastifyInstance) {
     }
   });
 
+  // Bulk fetch: returns all entries for an agent in a single query (used by dashboard)
+  app.post("/v1/dump", async (req, reply) => {
+    const ctx = await authenticate(req);
+    requireScope(ctx, "memory:read");
+
+    const env = getEnv();
+    const rateResult = checkRateLimit(ctx.tenantId, "dump", env.RATE_LIMIT_REQUESTS_PER_MINUTE);
+    applyRateLimitHeaders(reply, rateResult, env.RATE_LIMIT_REQUESTS_PER_MINUTE);
+    if (!rateResult.allowed) {
+      throw Object.assign(new Error("Rate limit exceeded"), { statusCode: 429, code: "RATE_LIMIT_EXCEEDED" });
+    }
+
+    const Body = z.object({
+      agent_id: z.string().min(1),
+      limit: z.number().int().min(1).max(500).optional().default(200)
+    });
+    const body = Body.parse(req.body);
+
+    const sql = makeSql();
+    try {
+      const rows = await sql`
+        SELECT e.path, ev.id as version_id, ev.value_json, ev.tags_json, ev.created_at
+        FROM entries e
+        JOIN entry_versions ev ON ev.id = e.latest_version_id
+        WHERE e.tenant_id=${ctx.tenantId}::uuid
+          AND e.agent_id=${body.agent_id}
+          AND (ev.deleted_at IS NULL)
+          AND (ev.expires_at IS NULL OR ev.expires_at > now())
+        ORDER BY ev.created_at DESC
+        LIMIT ${body.limit}
+      `;
+
+      const entries = rows.map(r => ({
+        path: r.path,
+        value: r.value_json,
+        tags: r.tags_json,
+        version_id: r.version_id,
+        created_at: r.created_at,
+        agent_id: body.agent_id
+      }));
+
+      return reply.send({ entries, count: entries.length });
+    } finally {
+      await sql.end({ timeout: 5 });
+    }
+  });
+
   app.post("/v1/glob", async (req, reply) => {
     const ctx = await authenticate(req);
     requireScope(ctx, "memory:read");
