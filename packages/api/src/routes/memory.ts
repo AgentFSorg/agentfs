@@ -298,6 +298,11 @@ export async function memoryRoutes(app: FastifyInstance) {
 
     const response = { ok: true, deleted: true, version_id: ver.id, created_at: ver.created_at };
 
+    // Invalidate dump cache for this agent
+    for (const key of dumpCache.keys()) {
+      if (key.startsWith(`${ctx.tenantId}:${body.agent_id}:`)) dumpCache.delete(key);
+    }
+
     // Store idempotency key if provided
     if (idempotencyKey) {
       await storeIdempotency(ctx.tenantId, idempotencyKey, body, response);
@@ -621,7 +626,7 @@ export async function memoryRoutes(app: FastifyInstance) {
 
     if (body.tags_any && body.tags_any.length > 0) {
       results = results.filter((r: any) => {
-        const tags = Array.isArray(r.tags) ? r.tags : [];
+        const tags = typeof r.tags === 'string' ? JSON.parse(r.tags) : (Array.isArray(r.tags) ? r.tags : []);
         return body.tags_any!.some(t => tags.includes(t));
       });
     }

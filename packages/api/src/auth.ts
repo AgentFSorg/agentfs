@@ -98,7 +98,7 @@ function parseBearer(authHeader?: string): { id: string; secret: string } | null
 
 export async function authenticate(req: FastifyRequest): Promise<AuthContext> {
   const parsed = parseBearer(req.headers.authorization);
-  if (!parsed) throw Object.assign(new Error("Unauthorized"), { statusCode: 401 });
+  if (!parsed) throw Object.assign(new Error("Unauthorized"), { statusCode: 401, code: "UNAUTHORIZED" });
 
   // Fix 3: Check lockout before doing any work
   if (checkLockout(parsed.id)) {
@@ -119,18 +119,18 @@ export async function authenticate(req: FastifyRequest): Promise<AuthContext> {
   `;
   if (!rows.length) {
     recordFailure(parsed.id);
-    throw Object.assign(new Error("Unauthorized"), { statusCode: 401 });
+    throw Object.assign(new Error("Unauthorized"), { statusCode: 401, code: "UNAUTHORIZED" });
   }
   const row = rows[0]!;
   if (row.revoked_at) {
     recordFailure(parsed.id);
-    throw Object.assign(new Error("Unauthorized"), { statusCode: 401 });
+    throw Object.assign(new Error("Unauthorized"), { statusCode: 401, code: "UNAUTHORIZED" });
   }
 
   const ok = await argon2.verify(row.secret_hash, parsed.secret);
   if (!ok) {
     recordFailure(parsed.id);
-    throw Object.assign(new Error("Unauthorized"), { statusCode: 401 });
+    throw Object.assign(new Error("Unauthorized"), { statusCode: 401, code: "UNAUTHORIZED" });
   }
 
   const scopes = Array.isArray(row.scopes_json) ? row.scopes_json : [];
