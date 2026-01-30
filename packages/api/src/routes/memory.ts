@@ -567,6 +567,12 @@ export async function memoryRoutes(app: FastifyInstance) {
       }
     }
 
+    // When tags_any is specified, fetch more rows from DB to compensate for
+    // post-query filtering (otherwise LIMIT cuts results before tag filter runs)
+    const dbLimit = (body.tags_any && body.tags_any.length > 0)
+      ? Math.min(body.limit * 5, 50)  // fetch 5x requested, cap at 50
+      : body.limit;
+
     // Vector similarity search using pgvector cosine distance
     // Use parameterized queries to prevent SQL injection
     const rows = pathPattern
@@ -590,7 +596,7 @@ export async function memoryRoutes(app: FastifyInstance) {
             AND (ev.expires_at IS NULL OR ev.expires_at > now())
             AND emb.path LIKE ${pathPattern} ESCAPE '\\'
           ORDER BY emb.embedding <=> ${vecLiteral}::vector ASC
-          LIMIT ${body.limit}
+          LIMIT ${dbLimit}
         `
       : await sql`
           SELECT
@@ -611,10 +617,10 @@ export async function memoryRoutes(app: FastifyInstance) {
             AND (ev.deleted_at IS NULL)
             AND (ev.expires_at IS NULL OR ev.expires_at > now())
           ORDER BY emb.embedding <=> ${vecLiteral}::vector ASC
-          LIMIT ${body.limit}
+          LIMIT ${dbLimit}
         `;
 
-    // Filter by tags if specified
+    // Filter by tags if specified, then apply the user's requested limit
     let results = rows.map((r: any) => ({
       path: r.path,
       value: r.value_json,
@@ -629,6 +635,7 @@ export async function memoryRoutes(app: FastifyInstance) {
         const tags = typeof r.tags === 'string' ? JSON.parse(r.tags) : (Array.isArray(r.tags) ? r.tags : []);
         return body.tags_any!.some(t => tags.includes(t));
       });
+      results = results.slice(0, body.limit); // Apply user's limit after filtering
     }
 
     return reply.send({ results });
