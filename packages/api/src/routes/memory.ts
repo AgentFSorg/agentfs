@@ -420,6 +420,38 @@ export async function memoryRoutes(app: FastifyInstance) {
   });
 
   // Bulk fetch: returns all entries for an agent in a single query (used by dashboard)
+  // List all agent IDs for a tenant
+  app.post("/v1/agents", async (req, reply) => {
+    const ctx = await authenticate(req);
+    requireScope(ctx, "memory:read");
+
+    const env = getEnv();
+    const rateResult = checkRateLimit(ctx.tenantId, "agents", env.RATE_LIMIT_REQUESTS_PER_MINUTE);
+    applyRateLimitHeaders(reply, rateResult, env.RATE_LIMIT_REQUESTS_PER_MINUTE);
+    if (!rateResult.allowed) {
+      throw Object.assign(new Error("Rate limit exceeded"), { statusCode: 429, code: "RATE_LIMIT_EXCEEDED" });
+    }
+
+    const sql = makeSql();
+    try {
+      const rows = await sql`
+        SELECT DISTINCT e.agent_id, COUNT(*)::int as memory_count
+        FROM entries e
+        JOIN entry_versions ev ON ev.id = e.latest_version_id
+        WHERE e.tenant_id=${ctx.tenantId}::uuid
+          AND (ev.deleted_at IS NULL)
+          AND (ev.expires_at IS NULL OR ev.expires_at > now())
+        GROUP BY e.agent_id
+        ORDER BY e.agent_id ASC
+      `;
+      return reply.send({
+        agents: rows.map(r => ({ id: r.agent_id, memory_count: r.memory_count }))
+      });
+    } finally {
+      await sql.end({ timeout: 5 });
+    }
+  });
+
   app.post("/v1/dump", async (req, reply) => {
     const ctx = await authenticate(req);
     requireScope(ctx, "memory:read");
