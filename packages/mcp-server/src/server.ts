@@ -7,6 +7,29 @@ import { z } from "zod";
 import { AgentOSClient } from "./api-client.js";
 import type { AgentOSConfig } from "./config.js";
 
+/** Safely stringify any value — never throws */
+function safeStringify(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    const s = JSON.stringify(value, null, 2);
+    return s ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+/** Safely parse tags from JSON string or return raw */
+function parseTags(tags: unknown): string[] {
+  if (Array.isArray(tags)) return tags;
+  if (typeof tags !== "string" || !tags) return [];
+  try {
+    const parsed = JSON.parse(tags);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [tags]; // treat as single tag
+  }
+}
+
 export function createServer(config: AgentOSConfig): McpServer {
   const server = new McpServer({
     name: "agentos-memory",
@@ -29,7 +52,7 @@ export function createServer(config: AgentOSConfig): McpServer {
           .describe("Memory path (e.g. /facts/user-name, /decisions/2024-01-15, /context/project-goals)"),
         value: z
           .string()
-          .describe("The content to store — can be any text, JSON, or structured data"),
+          .describe("The content to store as text"),
         tags: z
           .array(z.string())
           .optional()
@@ -43,15 +66,22 @@ export function createServer(config: AgentOSConfig): McpServer {
       },
     },
     async ({ path, value, tags, importance }) => {
-      const result = await client.put(path, value, tags || [], importance ?? 0.5);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `✅ Memory stored at ${path}\nVersion: ${result.version_id}\nCreated: ${result.created_at}`,
-          },
-        ],
-      };
+      try {
+        const result = await client.put(path, value, tags || [], importance ?? 0.5);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `✅ Memory stored at ${path}\nVersion: ${result.version_id}\nCreated: ${result.created_at}`,
+            },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `❌ Failed to store memory: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
     }
   );
 
@@ -81,36 +111,44 @@ export function createServer(config: AgentOSConfig): McpServer {
       },
     },
     async ({ query, limit, tags }) => {
-      const results = await client.search(query, limit ?? 5, tags);
+      try {
+        const results = await client.search(query, limit ?? 5, tags);
 
-      if (results.length === 0) {
+        if (results.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "No memories found matching your query.",
+              },
+            ],
+          };
+        }
+
+        const formatted = results
+          .map((m, i) => {
+            const sim = m.similarity ? ` (${(m.similarity * 100).toFixed(1)}% match)` : "";
+            const val = safeStringify(m.value);
+            const tagList = parseTags(m.tags);
+            const tagStr = tagList.length > 0 ? ` [${tagList.join(", ")}]` : "";
+            return `${i + 1}. **${m.path}**${sim}${tagStr}\n   ${val}`;
+          })
+          .join("\n\n");
+
         return {
           content: [
             {
               type: "text" as const,
-              text: "No memories found matching your query.",
+              text: `Found ${results.length} memories:\n\n${formatted}`,
             },
           ],
         };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `❌ Memory search failed: ${(err as Error).message}` }],
+          isError: true,
+        };
       }
-
-      const formatted = results
-        .map((m, i) => {
-          const sim = m.similarity ? ` (${(m.similarity * 100).toFixed(1)}% match)` : "";
-          const val = typeof m.value === "string" ? m.value : JSON.stringify(m.value);
-          const tagStr = m.tags ? ` [${typeof m.tags === "string" ? JSON.parse(m.tags).join(", ") : ""}]` : "";
-          return `${i + 1}. **${m.path}**${sim}${tagStr}\n   ${val}`;
-        })
-        .join("\n\n");
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Found ${results.length} memories:\n\n${formatted}`,
-          },
-        ],
-      };
     }
   );
 
@@ -129,29 +167,36 @@ export function createServer(config: AgentOSConfig): McpServer {
       },
     },
     async ({ path }) => {
-      const memory = await client.get(path);
+      try {
+        const memory = await client.get(path);
 
-      if (!memory) {
+        if (!memory) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `No memory found at path: ${path}`,
+              },
+            ],
+          };
+        }
+
+        const val = safeStringify(memory.value);
+
         return {
           content: [
             {
               type: "text" as const,
-              text: `No memory found at path: ${path}`,
+              text: `**${memory.path}**\n\n${val}\n\nVersion: ${memory.version_id || "unknown"}\nCreated: ${memory.created_at || "unknown"}`,
             },
           ],
         };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `❌ Failed to get memory: ${(err as Error).message}` }],
+          isError: true,
+        };
       }
-
-      const val = typeof memory.value === "string" ? memory.value : JSON.stringify(memory.value, null, 2);
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `**${memory.path}**\n\n${val}\n\nVersion: ${memory.version_id || "unknown"}\nCreated: ${memory.created_at || "unknown"}`,
-          },
-        ],
-      };
     }
   );
 
@@ -169,15 +214,22 @@ export function createServer(config: AgentOSConfig): McpServer {
       },
     },
     async ({ path }) => {
-      const result = await client.delete(path);
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `🗑️ Memory deleted at ${path}\nVersion: ${result.version_id}`,
-          },
-        ],
-      };
+      try {
+        const result = await client.delete(path);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `🗑️ Memory deleted at ${path}\nVersion: ${result.version_id}`,
+            },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `❌ Failed to delete memory: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
     }
   );
 
@@ -200,34 +252,41 @@ export function createServer(config: AgentOSConfig): McpServer {
       },
     },
     async ({ limit }) => {
-      const entries = await client.dump(limit ?? 50);
+      try {
+        const entries = await client.dump(limit ?? 50);
 
-      if (entries.length === 0) {
+        if (entries.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "No memories stored yet. Use memory_store to add your first memory.",
+              },
+            ],
+          };
+        }
+
+        const formatted = entries
+          .map((e) => {
+            const val = safeStringify(e.value).slice(0, 100);
+            return `• ${e.path}: ${val}${val.length >= 100 ? "..." : ""}`;
+          })
+          .join("\n");
+
         return {
           content: [
             {
               type: "text" as const,
-              text: "No memories stored yet. Use memory_store to add your first memory.",
+              text: `📚 ${entries.length} memories stored:\n\n${formatted}`,
             },
           ],
         };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `❌ Failed to list memories: ${(err as Error).message}` }],
+          isError: true,
+        };
       }
-
-      const formatted = entries
-        .map((e) => {
-          const val = typeof e.value === "string" ? e.value.slice(0, 100) : JSON.stringify(e.value).slice(0, 100);
-          return `• ${e.path}: ${val}${val.length >= 100 ? "..." : ""}`;
-        })
-        .join("\n");
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `📚 ${entries.length} memories stored:\n\n${formatted}`,
-          },
-        ],
-      };
     }
   );
 

@@ -39,7 +39,8 @@ export class AgentOSClient {
   }
 
   private async request<T>(endpoint: string, body: Record<string, unknown>, retries = 3): Promise<T> {
-    let lastError: Error | undefined;
+    if (retries < 1) throw new Error("retries must be >= 1");
+    let lastError: Error = new Error("No attempts made");
 
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
@@ -54,11 +55,21 @@ export class AgentOSClient {
         });
 
         if (!res.ok) {
-          const err = await res.json().catch(() => ({ error: { message: "Unknown error" } })) as { error?: { message?: string } };
-          throw new Error(`AgentOS API ${res.status}: ${err?.error?.message || "Unknown error"}`);
+          const errBody = await res.text().catch(() => "");
+          let message = `AgentOS API ${res.status}`;
+          try {
+            const parsed = JSON.parse(errBody) as { error?: { message?: string } };
+            if (parsed?.error?.message) message += `: ${parsed.error.message}`;
+          } catch {
+            if (errBody) message += `: ${errBody.slice(0, 200)}`;
+          }
+          throw new Error(message);
         }
 
-        return (await res.json()) as T;
+        // Handle empty responses (e.g. 204)
+        const text = await res.text();
+        if (!text) return {} as T;
+        return JSON.parse(text) as T;
       } catch (err) {
         lastError = err as Error;
         if (attempt < retries) {
@@ -69,7 +80,7 @@ export class AgentOSClient {
       }
     }
 
-    throw lastError!;
+    throw lastError;
   }
 
   async put(
