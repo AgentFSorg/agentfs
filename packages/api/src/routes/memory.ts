@@ -11,6 +11,29 @@ import { checkRateLimit, applyRateLimitHeaders } from "../ratelimit.js";
 import { getEnv } from "@agentos/shared/src/env.js";
 import { createHash } from "node:crypto";
 
+// Simple in-memory cache for dump endpoint (avoids repeated slow Supabase queries)
+const dumpCache = new Map<string, { data: any; ts: number }>();
+const DUMP_CACHE_TTL = 60_000; // 60 seconds
+
+function getCachedDump(key: string): any | null {
+  const entry = dumpCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > DUMP_CACHE_TTL) {
+    dumpCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedDump(key: string, data: any): void {
+  dumpCache.set(key, { data, ts: Date.now() });
+  // Evict old entries
+  if (dumpCache.size > 100) {
+    const oldest = [...dumpCache.entries()].sort((a, b) => a[1].ts - b[1].ts);
+    for (let i = 0; i < 50; i++) dumpCache.delete(oldest[i]![0]);
+  }
+}
+
 function stableJson(value: unknown): string {
   // MVP deterministic stringify (simple). For deeper determinism, sort keys recursively.
   return JSON.stringify(value);
@@ -160,6 +183,11 @@ export async function memoryRoutes(app: FastifyInstance) {
       }
 
       const response = { ok: true, version_id: ver.id, created_at: ver.created_at };
+
+      // Invalidate dump cache for this agent
+      for (const key of dumpCache.keys()) {
+        if (key.startsWith(`${ctx.tenantId}:${body.agent_id}:`)) dumpCache.delete(key);
+      }
 
       // Store idempotency key if provided
       if (idempotencyKey) {
@@ -409,6 +437,14 @@ export async function memoryRoutes(app: FastifyInstance) {
     });
     const body = Body.parse(req.body);
 
+    // Check cache first (60s TTL)
+    const cacheKey = `${ctx.tenantId}:${body.agent_id}:${body.limit}`;
+    const cached = getCachedDump(cacheKey);
+    if (cached) {
+      reply.header("X-Cache", "HIT");
+      return reply.send(cached);
+    }
+
     const sql = makeSql();
     try {
       const rows = await sql`
@@ -432,7 +468,10 @@ export async function memoryRoutes(app: FastifyInstance) {
         agent_id: body.agent_id
       }));
 
-      return reply.send({ entries, count: entries.length });
+      const response = { entries, count: entries.length };
+      setCachedDump(cacheKey, response);
+      reply.header("X-Cache", "MISS");
+      return reply.send(response);
     } finally {
       await sql.end({ timeout: 5 });
     }
