@@ -43,6 +43,7 @@ export async function createApp(opts: { logger?: boolean } = {}): Promise<{ app:
       "https://agentos.software",
       "https://www.agentos.software",
       "https://brain.agentos.software",
+      "https://debugger.agentos.software",
       /^https:\/\/.*\.vercel\.app$/,
       /^https?:\/\/localhost(:\d+)?$/,
     ],
