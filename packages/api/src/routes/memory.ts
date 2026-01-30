@@ -115,7 +115,7 @@ export async function memoryRoutes(app: FastifyInstance) {
     }
 
     const path = normalizePath(body.path);
-    if (isReservedPath(path)) throw Object.assign(new Error("Reserved path"), { statusCode: 403 });
+    if (isReservedPath(path)) throw Object.assign(new Error("Reserved path"), { statusCode: 403, code: "RESERVED_PATH" });
 
     const valueText = stableJson(body.value);
     const contentHash = sha256(`${path}:${valueText}`);
