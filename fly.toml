@@ -1,11 +1,12 @@
 app = "agentos-api"
-primary_region = "jnb"
+primary_region = "iad"
 
 [build]
 
 [env]
   NODE_ENV = "production"
   PORT = "8080"
+  TRUST_PROXY = "true"
 
 [http_service]
   internal_port = 8080
@@ -16,9 +17,9 @@ primary_region = "jnb"
   processes = ["app"]
 
 [[vm]]
-  memory = "512mb"
+  memory = "1gb"
   cpu_kind = "shared"
-  cpus = 1
+  cpus = 2
 
 [checks]
   [checks.health]

@@ -2,7 +2,7 @@ import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { normalizePath, isReservedPath } from "@agentos/shared/src/path.js";
 import { globToSqlLike } from "@agentos/shared/src/glob.js";
-import { makeSql } from "@agentos/shared/src/db/client.js";
+import { getSql } from "@agentos/shared/src/db/client.js";
 import { authenticate, requireScope } from "../auth.js";
 import { incWriteQuota, incSearchQuota } from "../quotas.js";
 import { embedQuery } from "../embeddings.js";
@@ -125,79 +125,75 @@ export async function memoryRoutes(app: FastifyInstance) {
 
     const expiresAt = body.ttl_seconds ? new Date(Date.now() + body.ttl_seconds * 1000) : null;
 
-    const sql = makeSql();
-    try {
-      const rows = await sql`
-        INSERT INTO entry_versions
-          (tenant_id, agent_id, path, value_json, tags_json, importance, searchable, content_hash, expires_at)
-        VALUES
-          (${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, ${body.value}::jsonb, ${JSON.stringify(body.tags)}::jsonb,
-           ${body.importance}, ${body.searchable}, ${contentHash}, ${expiresAt})
-        RETURNING id, created_at
-      `;
-      const ver = rows[0]!;
-      await sql`
-        INSERT INTO entries (tenant_id, agent_id, path, latest_version_id)
-        VALUES (${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, ${ver.id}::uuid)
-        ON CONFLICT (tenant_id, agent_id, path)
-        DO UPDATE SET latest_version_id = ${ver.id}::uuid
-      `;
+    const sql = getSql();
+    const rows = await sql`
+      INSERT INTO entry_versions
+        (tenant_id, agent_id, path, value_json, tags_json, importance, searchable, content_hash, expires_at)
+      VALUES
+        (${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, ${body.value}::jsonb, ${JSON.stringify(body.tags)}::jsonb,
+         ${body.importance}, ${body.searchable}, ${contentHash}, ${expiresAt})
+      RETURNING id, created_at
+    `;
+    const ver = rows[0]!;
+    await sql`
+      INSERT INTO entries (tenant_id, agent_id, path, latest_version_id)
+      VALUES (${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, ${ver.id}::uuid)
+      ON CONFLICT (tenant_id, agent_id, path)
+      DO UPDATE SET latest_version_id = ${ver.id}::uuid
+    `;
 
-      // Generate embedding inline if searchable=true AND we have an embeddings provider configured.
-      if (body.searchable) {
-        const env = getEnv();
-        if (env.OPENAI_API_KEY) {
-          try {
-            const textToEmbed = typeof body.value === "string" ? body.value : JSON.stringify(body.value);
-            const vec = await embedQuery(textToEmbed);
-            const vecLiteral = `[${vec.join(",")}]`;
-            const model = env.OPENAI_EMBED_MODEL || "text-embedding-3-small";
-            await sql`
-              INSERT INTO embeddings (version_id, tenant_id, agent_id, path, model, embedding)
-              VALUES (${ver.id}::uuid, ${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, ${model}, ${vecLiteral}::vector)
-              ON CONFLICT (version_id) DO UPDATE SET embedding = ${vecLiteral}::vector
-            `;
-            // Mark job as done
-            await sql`
-              INSERT INTO embedding_jobs (version_id, tenant_id, agent_id, path, status)
-              VALUES (${ver.id}::uuid, ${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, 'done')
-              ON CONFLICT (version_id) DO UPDATE SET status = 'done', updated_at = now()
-            `;
-          } catch (embErr: any) {
-            // Don't fail the write if embedding fails — queue for retry
-            console.error("Inline embedding failed, queueing for retry", { error: embErr?.message });
-            await sql`
-              INSERT INTO embedding_jobs (version_id, tenant_id, agent_id, path, status, last_error)
-              VALUES (${ver.id}::uuid, ${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, 'queued', ${embErr?.message ?? 'unknown'})
-              ON CONFLICT (version_id) DO NOTHING
-            `;
-          }
-        } else {
-          // No API key — just queue for later
+    // Generate embedding inline if searchable=true AND we have an embeddings provider configured.
+    if (body.searchable) {
+      const env = getEnv();
+      if (env.OPENAI_API_KEY) {
+        try {
+          const textToEmbed = typeof body.value === "string" ? body.value : JSON.stringify(body.value);
+          const vec = await embedQuery(textToEmbed);
+          const vecLiteral = `[${vec.join(",")}]`;
+          const model = env.OPENAI_EMBED_MODEL || "text-embedding-3-small";
+          await sql`
+            INSERT INTO embeddings (version_id, tenant_id, agent_id, path, model, embedding)
+            VALUES (${ver.id}::uuid, ${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, ${model}, ${vecLiteral}::vector)
+            ON CONFLICT (version_id) DO UPDATE SET embedding = ${vecLiteral}::vector
+          `;
+          // Mark job as done
           await sql`
             INSERT INTO embedding_jobs (version_id, tenant_id, agent_id, path, status)
-            VALUES (${ver.id}::uuid, ${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, 'queued')
+            VALUES (${ver.id}::uuid, ${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, 'done')
+            ON CONFLICT (version_id) DO UPDATE SET status = 'done', updated_at = now()
+          `;
+        } catch (embErr: any) {
+          // Don't fail the write if embedding fails — queue for retry
+          console.error("Inline embedding failed, queueing for retry", { error: embErr?.message });
+          await sql`
+            INSERT INTO embedding_jobs (version_id, tenant_id, agent_id, path, status, last_error)
+            VALUES (${ver.id}::uuid, ${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, 'queued', ${embErr?.message ?? 'unknown'})
             ON CONFLICT (version_id) DO NOTHING
           `;
         }
+      } else {
+        // No API key — just queue for later
+        await sql`
+          INSERT INTO embedding_jobs (version_id, tenant_id, agent_id, path, status)
+          VALUES (${ver.id}::uuid, ${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, 'queued')
+          ON CONFLICT (version_id) DO NOTHING
+        `;
       }
-
-      const response = { ok: true, version_id: ver.id, created_at: ver.created_at };
-
-      // Invalidate dump cache for this agent
-      for (const key of dumpCache.keys()) {
-        if (key.startsWith(`${ctx.tenantId}:${body.agent_id}:`)) dumpCache.delete(key);
-      }
-
-      // Store idempotency key if provided
-      if (idempotencyKey) {
-        await storeIdempotency(ctx.tenantId, idempotencyKey, body, response);
-      }
-
-      return reply.send(response);
-    } finally {
-      await sql.end({ timeout: 5 });
     }
+
+    const response = { ok: true, version_id: ver.id, created_at: ver.created_at };
+
+    // Invalidate dump cache for this agent
+    for (const key of dumpCache.keys()) {
+      if (key.startsWith(`${ctx.tenantId}:${body.agent_id}:`)) dumpCache.delete(key);
+    }
+
+    // Store idempotency key if provided
+    if (idempotencyKey) {
+      await storeIdempotency(ctx.tenantId, idempotencyKey, body, response);
+    }
+
+    return reply.send(response);
   });
 
   app.post("/v1/get", async (req, reply) => {
@@ -219,34 +215,30 @@ export async function memoryRoutes(app: FastifyInstance) {
     const body = Body.parse(req.body);
     const path = normalizePath(body.path);
 
-    const sql = makeSql();
-    try {
-      const rows = await sql`
-        SELECT ev.id as version_id, ev.value_json, ev.created_at, ev.expires_at, ev.deleted_at, ev.tags_json
-        FROM entries e
-        JOIN entry_versions ev ON ev.id = e.latest_version_id
-        WHERE e.tenant_id=${ctx.tenantId}::uuid AND e.agent_id=${body.agent_id} AND e.path=${path}
-        LIMIT 1
-      `;
-      if (!rows.length) return reply.send({ found: false });
+    const sql = getSql();
+    const rows = await sql`
+      SELECT ev.id as version_id, ev.value_json, ev.created_at, ev.expires_at, ev.deleted_at, ev.tags_json
+      FROM entries e
+      JOIN entry_versions ev ON ev.id = e.latest_version_id
+      WHERE e.tenant_id=${ctx.tenantId}::uuid AND e.agent_id=${body.agent_id} AND e.path=${path}
+      LIMIT 1
+    `;
+    if (!rows.length) return reply.send({ found: false });
 
-      const r = rows[0]!;
-      const expired = r.expires_at && new Date(r.expires_at).getTime() <= Date.now();
-      const deleted = !!r.deleted_at;
-      if (expired || deleted) return reply.send({ found: false });
+    const r = rows[0]!;
+    const expired = r.expires_at && new Date(r.expires_at).getTime() <= Date.now();
+    const deleted = !!r.deleted_at;
+    if (expired || deleted) return reply.send({ found: false });
 
-      return reply.send({
-        found: true,
-        path,
-        value: r.value_json,
-        version_id: r.version_id,
-        created_at: r.created_at,
-        expires_at: r.expires_at,
-        tags: r.tags_json
-      });
-    } finally {
-      await sql.end({ timeout: 5 });
-    }
+    return reply.send({
+      found: true,
+      path,
+      value: r.value_json,
+      version_id: r.version_id,
+      created_at: r.created_at,
+      expires_at: r.expires_at,
+      tags: r.tags_json
+    });
   });
 
   app.post("/v1/delete", async (req, reply) => {
@@ -287,35 +279,31 @@ export async function memoryRoutes(app: FastifyInstance) {
 
     const path = normalizePath(body.path);
 
-    const sql = makeSql();
-    try {
-      // Tombstone version
-      const rows = await sql`
-        INSERT INTO entry_versions
-          (tenant_id, agent_id, path, value_json, tags_json, importance, searchable, content_hash, deleted_at)
-        VALUES
-          (${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, '{}'::jsonb, '[]'::jsonb, 0, false, 'tombstone', now())
-        RETURNING id, created_at
-      `;
-      const ver = rows[0]!;
-      await sql`
-        INSERT INTO entries (tenant_id, agent_id, path, latest_version_id)
-        VALUES (${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, ${ver.id}::uuid)
-        ON CONFLICT (tenant_id, agent_id, path)
-        DO UPDATE SET latest_version_id = ${ver.id}::uuid
-      `;
+    const sql = getSql();
+    // Tombstone version
+    const rows = await sql`
+      INSERT INTO entry_versions
+        (tenant_id, agent_id, path, value_json, tags_json, importance, searchable, content_hash, deleted_at)
+      VALUES
+        (${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, '{}'::jsonb, '[]'::jsonb, 0, false, 'tombstone', now())
+      RETURNING id, created_at
+    `;
+    const ver = rows[0]!;
+    await sql`
+      INSERT INTO entries (tenant_id, agent_id, path, latest_version_id)
+      VALUES (${ctx.tenantId}::uuid, ${body.agent_id}, ${path}, ${ver.id}::uuid)
+      ON CONFLICT (tenant_id, agent_id, path)
+      DO UPDATE SET latest_version_id = ${ver.id}::uuid
+    `;
 
-      const response = { ok: true, deleted: true, version_id: ver.id, created_at: ver.created_at };
+    const response = { ok: true, deleted: true, version_id: ver.id, created_at: ver.created_at };
 
-      // Store idempotency key if provided
-      if (idempotencyKey) {
-        await storeIdempotency(ctx.tenantId, idempotencyKey, body, response);
-      }
-
-      return reply.send(response);
-    } finally {
-      await sql.end({ timeout: 5 });
+    // Store idempotency key if provided
+    if (idempotencyKey) {
+      await storeIdempotency(ctx.tenantId, idempotencyKey, body, response);
     }
+
+    return reply.send(response);
   });
 
   app.post("/v1/history", async (req, reply) => {
@@ -338,27 +326,23 @@ export async function memoryRoutes(app: FastifyInstance) {
     const body = Body.parse(req.body);
     const path = normalizePath(body.path);
 
-    const sql = makeSql();
-    try {
-      const rows = await sql`
-        SELECT id as version_id, created_at, value_json, expires_at, deleted_at
-        FROM entry_versions
-        WHERE tenant_id=${ctx.tenantId}::uuid AND agent_id=${body.agent_id} AND path=${path}
-        ORDER BY created_at DESC
-        LIMIT ${body.limit}
-      `;
-      return reply.send({
-        versions: rows.map(r => ({
-          version_id: r.version_id,
-          created_at: r.created_at,
-          value: r.value_json,
-          expires_at: r.expires_at,
-          deleted_at: r.deleted_at
-        }))
-      });
-    } finally {
-      await sql.end({ timeout: 5 });
-    }
+    const sql = getSql();
+    const rows = await sql`
+      SELECT id as version_id, created_at, value_json, expires_at, deleted_at
+      FROM entry_versions
+      WHERE tenant_id=${ctx.tenantId}::uuid AND agent_id=${body.agent_id} AND path=${path}
+      ORDER BY created_at DESC
+      LIMIT ${body.limit}
+    `;
+    return reply.send({
+      versions: rows.map(r => ({
+        version_id: r.version_id,
+        created_at: r.created_at,
+        value: r.value_json,
+        expires_at: r.expires_at,
+        deleted_at: r.deleted_at
+      }))
+    });
   });
 
   app.post("/v1/list", async (req, reply) => {
@@ -380,43 +364,39 @@ export async function memoryRoutes(app: FastifyInstance) {
     const body = Body.parse(req.body);
     const prefix = normalizePath(body.prefix);
 
-    const sql = makeSql();
-    try {
-      // List direct children under prefix. We'll do a simple approach:
-      // fetch paths that start with prefix + '/' and then slice next segment.
-      const prefixWithSlash = prefix === "/" ? "/" : `${prefix}/`;
-      const like = `${escapeSqlLikeLiteral(prefixWithSlash)}%`;
-      const rows = await sql`
-        SELECT e.path
-        FROM entries e
-        JOIN entry_versions ev ON ev.id = e.latest_version_id
-        WHERE e.tenant_id=${ctx.tenantId}::uuid
-          AND e.agent_id=${body.agent_id}
-          AND e.path LIKE ${like} ESCAPE '\\'
-          AND (ev.deleted_at IS NULL)
-          AND (ev.expires_at IS NULL OR ev.expires_at > now())
-        LIMIT 500
-      `;
+    const sql = getSql();
+    // List direct children under prefix. We'll do a simple approach:
+    // fetch paths that start with prefix + '/' and then slice next segment.
+    const prefixWithSlash = prefix === "/" ? "/" : `${prefix}/`;
+    const like = `${escapeSqlLikeLiteral(prefixWithSlash)}%`;
+    const rows = await sql`
+      SELECT e.path
+      FROM entries e
+      JOIN entry_versions ev ON ev.id = e.latest_version_id
+      WHERE e.tenant_id=${ctx.tenantId}::uuid
+        AND e.agent_id=${body.agent_id}
+        AND e.path LIKE ${like} ESCAPE '\\'
+        AND (ev.deleted_at IS NULL)
+        AND (ev.expires_at IS NULL OR ev.expires_at > now())
+      LIMIT 500
+    `;
 
-      const seen = new Set<string>();
-      const items: { path: string; type: "file" | "dir" }[] = [];
+    const seen = new Set<string>();
+    const items: { path: string; type: "file" | "dir" }[] = [];
 
-      for (const r of rows) {
-        const p: string = r.path;
-        const rest = p.slice(prefixWithSlash.length);
-        const seg = rest.split("/")[0]!;
-        const childPath = prefixWithSlash === "/" ? `/${seg}` : `${prefixWithSlash}${seg}`;
-        if (!seen.has(childPath)) {
-          seen.add(childPath);
-          const isDir = rest.includes("/");
-          items.push({ path: childPath, type: isDir ? "dir" : "file" });
-        }
+    for (const r of rows) {
+      const p: string = r.path;
+      const rest = p.slice(prefixWithSlash.length);
+      const seg = rest.split("/")[0]!;
+      const childPath = prefixWithSlash === "/" ? `/${seg}` : `${prefixWithSlash}${seg}`;
+      if (!seen.has(childPath)) {
+        seen.add(childPath);
+        const isDir = rest.includes("/");
+        items.push({ path: childPath, type: isDir ? "dir" : "file" });
       }
-
-      return reply.send({ items });
-    } finally {
-      await sql.end({ timeout: 5 });
     }
+
+    return reply.send({ items });
   });
 
   // Bulk fetch: returns all entries for an agent in a single query (used by dashboard)
@@ -432,24 +412,20 @@ export async function memoryRoutes(app: FastifyInstance) {
       throw Object.assign(new Error("Rate limit exceeded"), { statusCode: 429, code: "RATE_LIMIT_EXCEEDED" });
     }
 
-    const sql = makeSql();
-    try {
-      const rows = await sql`
-        SELECT DISTINCT e.agent_id, COUNT(*)::int as memory_count
-        FROM entries e
-        JOIN entry_versions ev ON ev.id = e.latest_version_id
-        WHERE e.tenant_id=${ctx.tenantId}::uuid
-          AND (ev.deleted_at IS NULL)
-          AND (ev.expires_at IS NULL OR ev.expires_at > now())
-        GROUP BY e.agent_id
-        ORDER BY e.agent_id ASC
-      `;
-      return reply.send({
-        agents: rows.map(r => ({ id: r.agent_id, memory_count: r.memory_count }))
-      });
-    } finally {
-      await sql.end({ timeout: 5 });
-    }
+    const sql = getSql();
+    const rows = await sql`
+      SELECT DISTINCT e.agent_id, COUNT(*)::int as memory_count
+      FROM entries e
+      JOIN entry_versions ev ON ev.id = e.latest_version_id
+      WHERE e.tenant_id=${ctx.tenantId}::uuid
+        AND (ev.deleted_at IS NULL)
+        AND (ev.expires_at IS NULL OR ev.expires_at > now())
+      GROUP BY e.agent_id
+      ORDER BY e.agent_id ASC
+    `;
+    return reply.send({
+      agents: rows.map(r => ({ id: r.agent_id, memory_count: r.memory_count }))
+    });
   });
 
   app.post("/v1/dump", async (req, reply) => {
@@ -477,36 +453,32 @@ export async function memoryRoutes(app: FastifyInstance) {
       return reply.send(cached);
     }
 
-    const sql = makeSql();
-    try {
-      const rows = await sql`
-        SELECT e.path, ev.id as version_id, ev.value_json, ev.tags_json, ev.created_at
-        FROM entries e
-        JOIN entry_versions ev ON ev.id = e.latest_version_id
-        WHERE e.tenant_id=${ctx.tenantId}::uuid
-          AND e.agent_id=${body.agent_id}
-          AND (ev.deleted_at IS NULL)
-          AND (ev.expires_at IS NULL OR ev.expires_at > now())
-        ORDER BY ev.created_at DESC
-        LIMIT ${body.limit}
-      `;
+    const sql = getSql();
+    const rows = await sql`
+      SELECT e.path, ev.id as version_id, ev.value_json, ev.tags_json, ev.created_at
+      FROM entries e
+      JOIN entry_versions ev ON ev.id = e.latest_version_id
+      WHERE e.tenant_id=${ctx.tenantId}::uuid
+        AND e.agent_id=${body.agent_id}
+        AND (ev.deleted_at IS NULL)
+        AND (ev.expires_at IS NULL OR ev.expires_at > now())
+      ORDER BY ev.created_at DESC
+      LIMIT ${body.limit}
+    `;
 
-      const entries = rows.map(r => ({
-        path: r.path,
-        value: r.value_json,
-        tags: r.tags_json,
-        version_id: r.version_id,
-        created_at: r.created_at,
-        agent_id: body.agent_id
-      }));
+    const entries = rows.map(r => ({
+      path: r.path,
+      value: r.value_json,
+      tags: r.tags_json,
+      version_id: r.version_id,
+      created_at: r.created_at,
+      agent_id: body.agent_id
+    }));
 
-      const response = { entries, count: entries.length };
-      setCachedDump(cacheKey, response);
-      reply.header("X-Cache", "MISS");
-      return reply.send(response);
-    } finally {
-      await sql.end({ timeout: 5 });
-    }
+    const response = { entries, count: entries.length };
+    setCachedDump(cacheKey, response);
+    reply.header("X-Cache", "MISS");
+    return reply.send(response);
   });
 
   app.post("/v1/glob", async (req, reply) => {
@@ -529,24 +501,20 @@ export async function memoryRoutes(app: FastifyInstance) {
     const pattern = normalizeGlobPattern(body.pattern);
     const { like } = globToSqlLike(pattern);
 
-    const sql = makeSql();
-    try {
-      const rows = await sql`
-        SELECT e.path
-        FROM entries e
-        JOIN entry_versions ev ON ev.id = e.latest_version_id
-        WHERE e.tenant_id=${ctx.tenantId}::uuid
-          AND e.agent_id=${body.agent_id}
-          AND e.path LIKE ${like} ESCAPE '\\'
-          AND (ev.deleted_at IS NULL)
-          AND (ev.expires_at IS NULL OR ev.expires_at > now())
-        ORDER BY e.path ASC
-        LIMIT 500
-      `;
-      return reply.send({ paths: rows.map(r => r.path) });
-    } finally {
-      await sql.end({ timeout: 5 });
-    }
+    const sql = getSql();
+    const rows = await sql`
+      SELECT e.path
+      FROM entries e
+      JOIN entry_versions ev ON ev.id = e.latest_version_id
+      WHERE e.tenant_id=${ctx.tenantId}::uuid
+        AND e.agent_id=${body.agent_id}
+        AND e.path LIKE ${like} ESCAPE '\\'
+        AND (ev.deleted_at IS NULL)
+        AND (ev.expires_at IS NULL OR ev.expires_at > now())
+      ORDER BY e.path ASC
+      LIMIT 500
+    `;
+    return reply.send({ paths: rows.map(r => r.path) });
   });
 
   app.post("/v1/search", async (req, reply) => {
@@ -584,84 +552,80 @@ export async function memoryRoutes(app: FastifyInstance) {
     // Format vector as PostgreSQL array literal for pgvector
     const vecLiteral = `[${queryVec.join(",")}]`;
 
-    const sql = makeSql();
-    try {
-      // Build path pattern for optional prefix filter (parameterized)
-      let pathPattern: string | null = null;
-      if (body.path_prefix) {
-        const prefix = normalizePath(body.path_prefix);
-        if (prefix !== "/") {
-          pathPattern = `${escapeSqlLikeLiteral(prefix)}%`;
-        }
+    const sql = getSql();
+    // Build path pattern for optional prefix filter (parameterized)
+    let pathPattern: string | null = null;
+    if (body.path_prefix) {
+      const prefix = normalizePath(body.path_prefix);
+      if (prefix !== "/") {
+        pathPattern = `${escapeSqlLikeLiteral(prefix)}%`;
       }
-
-      // Vector similarity search using pgvector cosine distance
-      // Use parameterized queries to prevent SQL injection
-      const rows = pathPattern
-        ? await sql`
-            SELECT
-              emb.path,
-              emb.version_id,
-              ev.value_json,
-              ev.tags_json,
-              ev.created_at,
-              1 - (emb.embedding <=> ${vecLiteral}::vector) as similarity
-            FROM embeddings emb
-            JOIN entry_versions ev ON ev.id = emb.version_id
-            JOIN entries e ON e.tenant_id = emb.tenant_id
-              AND e.agent_id = emb.agent_id
-              AND e.path = emb.path
-              AND e.latest_version_id = emb.version_id
-            WHERE emb.tenant_id = ${ctx.tenantId}::uuid
-              AND emb.agent_id = ${body.agent_id}
-              AND (ev.deleted_at IS NULL)
-              AND (ev.expires_at IS NULL OR ev.expires_at > now())
-              AND emb.path LIKE ${pathPattern} ESCAPE '\\'
-            ORDER BY emb.embedding <=> ${vecLiteral}::vector ASC
-            LIMIT ${body.limit}
-          `
-        : await sql`
-            SELECT
-              emb.path,
-              emb.version_id,
-              ev.value_json,
-              ev.tags_json,
-              ev.created_at,
-              1 - (emb.embedding <=> ${vecLiteral}::vector) as similarity
-            FROM embeddings emb
-            JOIN entry_versions ev ON ev.id = emb.version_id
-            JOIN entries e ON e.tenant_id = emb.tenant_id
-              AND e.agent_id = emb.agent_id
-              AND e.path = emb.path
-              AND e.latest_version_id = emb.version_id
-            WHERE emb.tenant_id = ${ctx.tenantId}::uuid
-              AND emb.agent_id = ${body.agent_id}
-              AND (ev.deleted_at IS NULL)
-              AND (ev.expires_at IS NULL OR ev.expires_at > now())
-            ORDER BY emb.embedding <=> ${vecLiteral}::vector ASC
-            LIMIT ${body.limit}
-          `;
-
-      // Filter by tags if specified
-      let results = rows.map((r: any) => ({
-        path: r.path,
-        value: r.value_json,
-        tags: r.tags_json,
-        similarity: r.similarity,
-        version_id: r.version_id,
-        created_at: r.created_at
-      }));
-
-      if (body.tags_any && body.tags_any.length > 0) {
-        results = results.filter((r: any) => {
-          const tags = Array.isArray(r.tags) ? r.tags : [];
-          return body.tags_any!.some(t => tags.includes(t));
-        });
-      }
-
-      return reply.send({ results });
-    } finally {
-      await sql.end({ timeout: 5 });
     }
+
+    // Vector similarity search using pgvector cosine distance
+    // Use parameterized queries to prevent SQL injection
+    const rows = pathPattern
+      ? await sql`
+          SELECT
+            emb.path,
+            emb.version_id,
+            ev.value_json,
+            ev.tags_json,
+            ev.created_at,
+            1 - (emb.embedding <=> ${vecLiteral}::vector) as similarity
+          FROM embeddings emb
+          JOIN entry_versions ev ON ev.id = emb.version_id
+          JOIN entries e ON e.tenant_id = emb.tenant_id
+            AND e.agent_id = emb.agent_id
+            AND e.path = emb.path
+            AND e.latest_version_id = emb.version_id
+          WHERE emb.tenant_id = ${ctx.tenantId}::uuid
+            AND emb.agent_id = ${body.agent_id}
+            AND (ev.deleted_at IS NULL)
+            AND (ev.expires_at IS NULL OR ev.expires_at > now())
+            AND emb.path LIKE ${pathPattern} ESCAPE '\\'
+          ORDER BY emb.embedding <=> ${vecLiteral}::vector ASC
+          LIMIT ${body.limit}
+        `
+      : await sql`
+          SELECT
+            emb.path,
+            emb.version_id,
+            ev.value_json,
+            ev.tags_json,
+            ev.created_at,
+            1 - (emb.embedding <=> ${vecLiteral}::vector) as similarity
+          FROM embeddings emb
+          JOIN entry_versions ev ON ev.id = emb.version_id
+          JOIN entries e ON e.tenant_id = emb.tenant_id
+            AND e.agent_id = emb.agent_id
+            AND e.path = emb.path
+            AND e.latest_version_id = emb.version_id
+          WHERE emb.tenant_id = ${ctx.tenantId}::uuid
+            AND emb.agent_id = ${body.agent_id}
+            AND (ev.deleted_at IS NULL)
+            AND (ev.expires_at IS NULL OR ev.expires_at > now())
+          ORDER BY emb.embedding <=> ${vecLiteral}::vector ASC
+          LIMIT ${body.limit}
+        `;
+
+    // Filter by tags if specified
+    let results = rows.map((r: any) => ({
+      path: r.path,
+      value: r.value_json,
+      tags: r.tags_json,
+      similarity: r.similarity,
+      version_id: r.version_id,
+      created_at: r.created_at
+    }));
+
+    if (body.tags_any && body.tags_any.length > 0) {
+      results = results.filter((r: any) => {
+        const tags = Array.isArray(r.tags) ? r.tags : [];
+        return body.tags_any!.some(t => tags.includes(t));
+      });
+    }
+
+    return reply.send({ results });
   });
 }

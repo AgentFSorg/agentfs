@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { getEnv } from "@agentos/shared/src/env.js";
-import { makeSql } from "@agentos/shared/src/db/client.js";
+import { getSql } from "@agentos/shared/src/db/client.js";
 import { checkRateLimit, applyRateLimitHeaders } from "../ratelimit.js";
 import argon2 from "argon2";
 import { randomBytes } from "node:crypto";
@@ -31,26 +31,22 @@ export async function adminRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: { code: "FORBIDDEN", message: "Invalid token" } });
     }
 
-    const sql = makeSql();
-    try {
-      const rows = await sql`SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`;
-      if (!rows.length) return reply.status(400).send({ error: { code: "NO_TENANT", message: "Run seed first" } });
-      const tenantId = rows[0]!.id;
+    const sql = getSql();
+    const rows = await sql`SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`;
+    if (!rows.length) return reply.status(400).send({ error: { code: "NO_TENANT", message: "Run seed first" } });
+    const tenantId = rows[0]!.id;
 
-      const pub = base64url(randomBytes(8));
-      const secret = base64url(randomBytes(32));
-      const id = `agfs_dev_${pub}`;
-      const full = `${id}.${secret}`;
-      const secretHash = await argon2.hash(secret);
+    const pub = base64url(randomBytes(8));
+    const secret = base64url(randomBytes(32));
+    const id = `agfs_dev_${pub}`;
+    const full = `${id}.${secret}`;
+    const secretHash = await argon2.hash(secret);
 
-      await sql`
-        INSERT INTO api_keys (id, tenant_id, secret_hash, label)
-        VALUES (${id}, ${tenantId}::uuid, ${secretHash}, ${body.label})
-      `;
+    await sql`
+      INSERT INTO api_keys (id, tenant_id, secret_hash, label)
+      VALUES (${id}, ${tenantId}::uuid, ${secretHash}, ${body.label})
+    `;
 
-      return reply.send({ ok: true, api_key: full });
-    } finally {
-      await sql.end({ timeout: 5 });
-    }
+    return reply.send({ ok: true, api_key: full });
   });
 }
