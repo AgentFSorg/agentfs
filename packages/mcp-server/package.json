@@ -1,0 +1,37 @@
+{
+  "name": "@agentos/mcp-server",
+  "version": "0.1.0",
+  "description": "AgentOS MCP Server — persistent, searchable memory for any MCP-compatible AI tool",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "agentos-mcp": "./dist/bin/agentos-mcp.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/bin/agentos-mcp.ts"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "agentos",
+    "ai-memory",
+    "persistent-memory",
+    "semantic-search",
+    "llm"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0"
+  }
+}
