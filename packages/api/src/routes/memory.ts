@@ -49,15 +49,15 @@ function escapeSqlLikeLiteral(input: string): string {
 }
 
 function normalizeGlobPattern(input: string): string {
-  if (!input || typeof input !== "string") throw new Error("Invalid glob pattern");
-  if (!input.startsWith("/")) throw new Error("Glob pattern must start with '/'");
-  if (input.length > 512) throw new Error("Glob pattern too long");
+  if (!input || typeof input !== "string") throw Object.assign(new Error("Invalid glob pattern"), { statusCode: 400, code: "INVALID_GLOB" });
+  if (!input.startsWith("/")) throw Object.assign(new Error("Glob pattern must start with '/'"), { statusCode: 400, code: "INVALID_GLOB" });
+  if (input.length > 512) throw Object.assign(new Error("Glob pattern too long"), { statusCode: 400, code: "INVALID_GLOB" });
   let p = input.replace(/\/+/g, "/");
   if (p.length > 1 && p.endsWith("/")) p = p.slice(0, -1);
   const segs = p.split("/").slice(1);
   for (const s of segs) {
-    if (s.length === 0) throw new Error("Empty glob segment");
-    if (s === "." || s === "..") throw new Error("Invalid glob segment");
+    if (s.length === 0) throw Object.assign(new Error("Empty glob segment"), { statusCode: 400, code: "INVALID_GLOB" });
+    if (s === "." || s === "..") throw Object.assign(new Error("Invalid glob segment"), { statusCode: 400, code: "INVALID_GLOB" });
   }
   return p;
 }
