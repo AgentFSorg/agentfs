@@ -105,7 +105,8 @@ async function post<T>(
   const res = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     headers,
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000)
   });
   const json = await res.json();
   if (!res.ok) {

@@ -10,6 +10,7 @@ import { checkIdempotency, storeIdempotency } from "../idempotency.js";
 import { checkRateLimit, applyRateLimitHeaders } from "../ratelimit.js";
 import { getEnv } from "@agentos/shared/src/env.js";
 import { createHash } from "node:crypto";
+import { canonicalJsonStringify } from "../canonical-json.js";
 
 // Simple in-memory cache for dump endpoint (avoids repeated slow Supabase queries)
 const dumpCache = new Map<string, { data: any; ts: number }>();
@@ -27,16 +28,15 @@ function getCachedDump(key: string): any | null {
 
 function setCachedDump(key: string, data: any): void {
   dumpCache.set(key, { data, ts: Date.now() });
-  // Evict old entries
+  // Evict oldest entries when at capacity (FIFO, O(1))
   if (dumpCache.size > 100) {
-    const oldest = [...dumpCache.entries()].sort((a, b) => a[1].ts - b[1].ts);
-    for (let i = 0; i < 50; i++) dumpCache.delete(oldest[i]![0]);
+    const firstKey = dumpCache.keys().next().value;
+    if (firstKey !== undefined) dumpCache.delete(firstKey);
   }
 }
 
 function stableJson(value: unknown): string {
-  // MVP deterministic stringify (simple). For deeper determinism, sort keys recursively.
-  return JSON.stringify(value);
+  return canonicalJsonStringify(value);
 }
 
 function sha256(text: string): string {
@@ -147,7 +147,8 @@ export async function memoryRoutes(app: FastifyInstance) {
       const env = getEnv();
       if (env.OPENAI_API_KEY) {
         try {
-          const textToEmbed = typeof body.value === "string" ? body.value : JSON.stringify(body.value);
+          const rawText = typeof body.value === "string" ? body.value : JSON.stringify(body.value);
+          const textToEmbed = rawText.length > 8000 ? rawText.slice(0, 8000) : rawText;
           const vec = await embedQuery(textToEmbed);
           const vecLiteral = `[${vec.join(",")}]`;
           const model = env.OPENAI_EMBED_MODEL || "text-embedding-3-small";

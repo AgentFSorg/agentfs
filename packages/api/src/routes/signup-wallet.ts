@@ -1,6 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { makeSql } from "@agentos/shared/src/db/client.js";
+import { getSql } from "@agentos/shared/src/db/client.js";
 import { checkRateLimit, applyRateLimitHeaders } from "../ratelimit.js";
 import argon2 from "argon2";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -127,78 +127,75 @@ export async function walletSignupRoutes(app: FastifyInstance) {
       }
     }
 
-    const sql = makeSql();
-    try {
-      // Check if wallet already has a tenant
-      const existing = await sql`
-        SELECT t.id, t.tier, k.id as key_id
-        FROM tenants t
-        LEFT JOIN api_keys k ON k.tenant_id = t.id AND k.revoked_at IS NULL
-        WHERE t.wallet_address = ${wallet}
-        LIMIT 1
-      `;
+    const sql = getSql();
 
-      if (existing.length && existing[0].key_id) {
-        // Wallet already registered — tell user
-        return reply.status(409).send({
-          error: {
-            code: "WALLET_EXISTS",
-            message:
-              "An API key already exists for this wallet. Contact support if you need a new key.",
-          },
-          tier: existing[0].tier,
-        });
-      }
+    // Check if wallet already has a tenant
+    const existing = await sql`
+      SELECT t.id, t.tier, k.id as key_id
+      FROM tenants t
+      LEFT JOIN api_keys k ON k.tenant_id = t.id AND k.revoked_at IS NULL
+      WHERE t.wallet_address = ${wallet}
+      LIMIT 1
+    `;
 
-      // Create tenant for this wallet
-      const tenantId = existing.length ? existing[0].id : randomUUID();
-      const tier = "free"; // Tier will be updated by the balance check cron
-
-      if (!existing.length) {
-        await sql`
-          INSERT INTO tenants (id, name, wallet_address, wallet_verified_at, tier)
-          VALUES (
-            ${tenantId}::uuid,
-            ${`wallet:${wallet.slice(0, 8)}...${wallet.slice(-4)}`},
-            ${wallet},
-            now(),
-            ${tier}
-          )
-        `;
-      } else {
-        // Update existing tenant with wallet verification
-        await sql`
-          UPDATE tenants
-          SET wallet_verified_at = now()
-          WHERE id = ${tenantId}::uuid
-        `;
-      }
-
-      // Generate API key
-      const env = "live";
-      const pub = base64url(randomBytes(8));
-      const secret = base64url(randomBytes(32));
-      const keyId = `agfs_${env}_${pub}`;
-      const fullKey = `${keyId}.${secret}`;
-      const secretHash = await argon2.hash(secret);
-
-      await sql`
-        INSERT INTO api_keys (id, tenant_id, secret_hash, label)
-        VALUES (${keyId}, ${tenantId}::uuid, ${secretHash}, ${"wallet"})
-      `;
-
-      return reply.status(201).send({
-        ok: true,
-        api_key: fullKey,
-        tenant_id: tenantId,
-        wallet: wallet,
-        tier: tier,
-        message:
-          "Save your API key now. It will not be shown again. Your tier will be updated once we verify your $AOS balance.",
+    if (existing.length && existing[0].key_id) {
+      // Wallet already registered — tell user
+      return reply.status(409).send({
+        error: {
+          code: "WALLET_EXISTS",
+          message:
+            "An API key already exists for this wallet. Contact support if you need a new key.",
+        },
+        tier: existing[0].tier,
       });
-    } finally {
-      await sql.end({ timeout: 5 });
     }
+
+    // Create tenant for this wallet
+    const tenantId = existing.length ? existing[0].id : randomUUID();
+    const tier = "free"; // Tier will be updated by the balance check cron
+
+    if (!existing.length) {
+      await sql`
+        INSERT INTO tenants (id, name, wallet_address, wallet_verified_at, tier)
+        VALUES (
+          ${tenantId}::uuid,
+          ${`wallet-signup`},
+          ${wallet},
+          now(),
+          ${tier}
+        )
+      `;
+    } else {
+      // Update existing tenant with wallet verification
+      await sql`
+        UPDATE tenants
+        SET wallet_verified_at = now()
+        WHERE id = ${tenantId}::uuid
+      `;
+    }
+
+    // Generate API key
+    const env = "live";
+    const pub = base64url(randomBytes(8));
+    const secret = base64url(randomBytes(32));
+    const keyId = `agfs_${env}_${pub}`;
+    const fullKey = `${keyId}.${secret}`;
+    const secretHash = await argon2.hash(secret);
+
+    await sql`
+      INSERT INTO api_keys (id, tenant_id, secret_hash, label)
+      VALUES (${keyId}, ${tenantId}::uuid, ${secretHash}, ${"wallet"})
+    `;
+
+    return reply.status(201).send({
+      ok: true,
+      api_key: fullKey,
+      tenant_id: tenantId,
+      wallet: wallet,
+      tier: tier,
+      message:
+        "Save your API key now. It will not be shown again. Your tier will be updated once we verify your $AOS balance.",
+    });
   });
 
   /**
@@ -218,33 +215,29 @@ export async function walletSignupRoutes(app: FastifyInstance) {
         .send({ error: { code: "VALIDATION_ERROR", message: "Invalid wallet address" } });
     }
 
-    const sql = makeSql();
-    try {
-      const rows = await sql`
-        SELECT tier, token_balance, last_balance_check
-        FROM tenants
-        WHERE wallet_address = ${parsed.data.wallet}
-        LIMIT 1
-      `;
+    const sql = getSql();
+    const rows = await sql`
+      SELECT tier, token_balance, last_balance_check
+      FROM tenants
+      WHERE wallet_address = ${parsed.data.wallet}
+      LIMIT 1
+    `;
 
-      if (!rows.length) {
-        return reply.send({
-          wallet: parsed.data.wallet,
-          tier: "free",
-          token_balance: 0,
-          registered: false,
-        });
-      }
-
+    if (!rows.length) {
       return reply.send({
         wallet: parsed.data.wallet,
-        tier: rows[0].tier,
-        token_balance: Number(rows[0].token_balance),
-        last_balance_check: rows[0].last_balance_check,
-        registered: true,
+        tier: "free",
+        token_balance: 0,
+        registered: false,
       });
-    } finally {
-      await sql.end({ timeout: 5 });
     }
+
+    return reply.send({
+      wallet: parsed.data.wallet,
+      tier: rows[0].tier,
+      token_balance: Number(rows[0].token_balance),
+      last_balance_check: rows[0].last_balance_check,
+      registered: true,
+    });
   });
 }

@@ -2,6 +2,7 @@ import Fastify, { FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import { timingSafeEqual } from "node:crypto";
 import { getEnv } from "@agentos/shared/src/env.js";
+import { getSql } from "@agentos/shared/src/db/client.js";
 import { register, httpRequests, httpDuration } from "./metrics.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { adminRoutes } from "./routes/admin.js";
@@ -122,7 +123,15 @@ export async function createApp(opts: { logger?: boolean } = {}): Promise<{ app:
     if (typeof end === "function") end();
   });
 
-  app.get("/healthz", async () => ({ ok: true }));
+  app.get("/healthz", async () => {
+    try {
+      const sql = getSql();
+      await sql`SELECT 1`;
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: "database_unavailable" };
+    }
+  });
 
   if (env.ENABLE_METRICS) {
     if (env.NODE_ENV === "production" && !env.METRICS_TOKEN) {

@@ -57,6 +57,14 @@ interface FailedAttempts {
 
 const failedAttempts = new Map<string, FailedAttempts>();
 
+// Periodic cleanup to prevent unbounded memory growth from brute-force attempts
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of failedAttempts) {
+    if (now - entry.firstFailAt > LOCKOUT_WINDOW_MS) failedAttempts.delete(key);
+  }
+}, 60_000);
+
 function checkLockout(keyId: string): boolean {
   const entry = failedAttempts.get(keyId);
   if (!entry) return false;

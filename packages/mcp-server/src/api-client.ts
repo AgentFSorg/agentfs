@@ -100,9 +100,13 @@ export class AgentOSClient {
 
   async get(path: string): Promise<Memory | null> {
     try {
-      return await this.request<Memory>("/v1/get", { path });
-    } catch {
-      return null;
+      const result = await this.request<Memory & { found?: boolean }>("/v1/get", { path });
+      if (result && (result as any).found === false) return null;
+      return result;
+    } catch (err: unknown) {
+      // Only treat 404 as "not found"; re-throw auth, rate limit, and network errors
+      if (err instanceof Error && err.message.includes("404")) return null;
+      throw err;
     }
   }
 
