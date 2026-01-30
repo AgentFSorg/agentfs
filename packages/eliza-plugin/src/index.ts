@@ -436,7 +436,7 @@ export const agentOSPlugin: Plugin = {
       const client = getClient(runtime);
       // Verify connectivity by writing a heartbeat
       await client.put({
-        path: "/_system/heartbeat",
+        path: "/heartbeat",
         value: { status: "connected", timestamp: new Date().toISOString() },
       });
       console.log("[agentos] Plugin initialized — connected to AgentOS API");

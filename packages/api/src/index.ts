@@ -23,9 +23,27 @@ async function main() {
   const { app, env } = await createApp({ logger: true });
   await app.listen({ port: env.PORT, host: "0.0.0.0" });
 
+  // N6: Periodic cleanup of expired idempotency keys (every 6 hours)
+  const cleanupInterval = setInterval(async () => {
+    try {
+      const sql = getSql();
+      const result = await sql`
+        DELETE FROM idempotency_keys
+        WHERE expires_at < now()
+      `;
+      const count = (result as any).count ?? 0;
+      if (count > 0) {
+        console.info(`[cleanup] Purged ${count} expired idempotency keys`);
+      }
+    } catch (err: any) {
+      console.warn(`[cleanup] Failed to purge idempotency keys: ${err?.message}`);
+    }
+  }, 6 * 60 * 60 * 1000); // 6 hours
+
   // Fix 7: Graceful shutdown handlers
   const shutdown = async (signal: string) => {
     console.info(`[shutdown] Received ${signal}, shutting down gracefully...`);
+    clearInterval(cleanupInterval);
     try {
       // 1. Stop accepting new requests
       await app.close();

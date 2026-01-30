@@ -24,7 +24,8 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const Body = z.object({
       token: z.string().min(1),
-      label: z.string().optional().default("default")
+      label: z.string().optional().default("default"),
+      tenant_id: z.string().uuid().optional()
     });
     const body = Body.parse(req.body);
     if (body.token !== env.ADMIN_BOOTSTRAP_TOKEN) {
@@ -32,9 +33,18 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     const sql = getSql();
-    const rows = await sql`SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`;
-    if (!rows.length) return reply.status(400).send({ error: { code: "NO_TENANT", message: "Run seed first" } });
-    const tenantId = rows[0]!.id;
+    let tenantId: string;
+    if (body.tenant_id) {
+      // Verify the tenant exists
+      const check = await sql`SELECT id FROM tenants WHERE id=${body.tenant_id}::uuid LIMIT 1`;
+      if (!check.length) return reply.status(400).send({ error: { code: "TENANT_NOT_FOUND", message: "Tenant not found" } });
+      tenantId = check[0]!.id;
+    } else {
+      // Fallback: use the first tenant (backwards compatible)
+      const rows = await sql`SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`;
+      if (!rows.length) return reply.status(400).send({ error: { code: "NO_TENANT", message: "Run seed first" } });
+      tenantId = rows[0]!.id;
+    }
 
     const pub = base64url(randomBytes(8));
     const secret = base64url(randomBytes(32));
